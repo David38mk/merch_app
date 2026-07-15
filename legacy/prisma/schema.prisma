@@ -1,0 +1,107 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SELLER
+  BUYER
+}
+
+enum Plan {
+  FREE
+  CREATOR
+  PRO
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  FULFILLED
+  CANCELLED
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String
+  role          Role
+  createdAt     DateTime  @default(now())
+
+  sellerProfile SellerProfile?
+  orders        Order[]        @relation("BuyerOrders")
+  sessions      Session[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SellerProfile {
+  id                    String    @id @default(cuid())
+  userId                String    @unique
+  slug                  String    @unique
+  name                  String
+  bio                   String?
+  avatarUrl             String?
+  plan                  Plan      @default(FREE)
+  stripeCustomerId      String?   @unique
+  stripeSubscriptionId  String?   @unique
+  subscriptionStatus    String?
+  currentPeriodEnd      DateTime?
+  createdAt             DateTime  @default(now())
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  products Product[]
+  orders   Order[]   @relation("SellerOrders")
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  sellerId    String
+  name        String
+  description String?
+  price       Float
+  imageUrl    String?
+  category    String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  seller     SellerProfile @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[]
+}
+
+model Order {
+  id                   String      @id @default(cuid())
+  buyerId              String
+  sellerId             String
+  stripePaymentIntentId String?    @unique
+  stripeSessionId      String?     @unique
+  subtotal             Float
+  commissionAmount     Float
+  status               OrderStatus @default(PENDING)
+  createdAt            DateTime    @default(now())
+
+  buyer  User          @relation("BuyerOrders", fields: [buyerId], references: [id])
+  seller SellerProfile @relation("SellerOrders", fields: [sellerId], references: [id])
+  items  OrderItem[]
+}
+
+model OrderItem {
+  id               String  @id @default(cuid())
+  orderId          String
+  productId        String
+  quantity         Int
+  priceAtPurchase  Float
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+}

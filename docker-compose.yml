@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:16
+    container_name: mhc_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mhc
+      POSTGRES_PASSWORD: mhc_dev_password
+      POSTGRES_DB: myhappinessclub
+    ports:
+      - "5432:5432"
+    volumes:
+      - mhc_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mhc -d myhappinessclub"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mhc_pgdata:
