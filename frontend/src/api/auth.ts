@@ -18,14 +18,18 @@ export interface TokenResponse {
   email_verification_required: boolean;
 }
 
+export type AuthIntent = "buyer" | "seller";
+
 export interface RegisterInput {
   first_name: string;
   last_name: string;
   email: string;
   password: string;
+  intent: AuthIntent;
+  accept_terms: boolean;
 }
 
-export async function registerSeller(input: RegisterInput): Promise<TokenResponse> {
+export async function registerAccount(input: RegisterInput): Promise<TokenResponse> {
   return (await api.post<TokenResponse>("/auth/register", input)).data;
 }
 
@@ -37,8 +41,12 @@ export async function loginUser(email: string, password: string, remember: boole
   return data.access_token;
 }
 
-export async function googleLogin(credential: string, remember: boolean): Promise<string> {
-  const { data } = await api.post<TokenResponse>("/auth/google", { credential, remember });
+export async function googleLogin(
+  credential: string,
+  remember: boolean,
+  intent: AuthIntent = "seller",
+): Promise<string> {
+  const { data } = await api.post<TokenResponse>("/auth/google", { credential, remember, intent });
   return data.access_token;
 }
 

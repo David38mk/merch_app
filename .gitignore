@@ -33,6 +33,9 @@ coverage/
 
 # ── Editors / IDEs ────────────────────────────
 .vscode/
+# Local debug configs (explicit — already covered by .vscode/ above)
+.vscode/launch.json
+.vscode/tasks.json
 .idea/
 *.swp
 *~

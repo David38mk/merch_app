@@ -33,7 +33,14 @@ def _apply(db: Session, p: SellerProfile, payload: OnboardingUpdate) -> None:
     """Apply only the fields present in the payload (partial autosave)."""
     if payload.brand_name is not None:
         p.store_name = payload.brand_name
-        p.slug = unique_slug(db, payload.brand_name, exclude_id=p.id)
+        # The slug is the store's public URL. Once the store has ever been
+        # published it belongs to the website builder's publish flow — renaming
+        # the brand here must NOT move the live URL and 404 every shared link.
+        if p.published_at is None:
+            p.slug = unique_slug(db, payload.brand_name, exclude_id=p.id)
+        else:
+            # Live store renamed → caches serving the old name must revalidate.
+            p.storefront_version += 1
     if payload.creator_name is not None:
         p.creator_name = payload.creator_name
     if payload.country is not None:

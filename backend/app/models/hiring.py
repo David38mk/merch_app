@@ -2,13 +2,15 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, Numeric, String
+from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
 from app.models.enums import (
+    AttachmentKind,
     BidStatus,
     CallStatus,
+    CollabEventType,
     CollabState,
     PaymentType,
     SubmissionDecision,
@@ -17,21 +19,44 @@ from app.models.enums import (
 
 
 class DesignerCall(UUIDMixin, TimestampMixin, Base):
-    """A Seller's job posting to hire a Designer."""
+    """A Seller's job posting to hire a Designer, always tied to a base product."""
 
     __tablename__ = "designer_calls"
 
     seller_profile_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("seller_profiles.id", ondelete="CASCADE"))
+    # The blank the design is for (required by the API; nullable for older rows).
+    base_item_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("base_items.id"), nullable=True)
     title: Mapped[str] = mapped_column(String)
     brief: Mapped[str] = mapped_column(String)
-    reference_image_url: Mapped[str | None] = mapped_column(String, nullable=True)  # 🔌 storage
+    design_style: Mapped[str | None] = mapped_column(String, nullable=True)
+    inspiration_notes: Mapped[str | None] = mapped_column(String, nullable=True)
+    reference_image_url: Mapped[str | None] = mapped_column(String, nullable=True)  # ⏭️ legacy single ref
     deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    desired_launch_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     payment_type: Mapped[PaymentType] = mapped_column(SAEnum(PaymentType), default=PaymentType.FIXED)
     budget_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
-    status: Mapped[CallStatus] = mapped_column(SAEnum(CallStatus), default=CallStatus.OPEN)
+    revenue_share_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    status: Mapped[CallStatus] = mapped_column(SAEnum(CallStatus), default=CallStatus.DRAFT)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     seller: Mapped["SellerProfile"] = relationship(back_populates="designer_calls")  # noqa: F821
+    base_item: Mapped["BaseItem | None"] = relationship()  # noqa: F821
     bids: Mapped[list["Bid"]] = relationship(back_populates="call", cascade="all, delete-orphan")
+    attachments: Mapped[list["CallAttachment"]] = relationship(
+        back_populates="call", cascade="all, delete-orphan"
+    )
+
+
+class CallAttachment(UUIDMixin, TimestampMixin, Base):
+    """A reference image or brand-guideline file on a DesignerCall. 🔌 storage."""
+
+    __tablename__ = "call_attachments"
+
+    call_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("designer_calls.id", ondelete="CASCADE"), index=True)
+    url: Mapped[str] = mapped_column(String)
+    kind: Mapped[AttachmentKind] = mapped_column(SAEnum(AttachmentKind), default=AttachmentKind.REFERENCE)
+
+    call: Mapped["DesignerCall"] = relationship(back_populates="attachments")
 
 
 class Bid(UUIDMixin, TimestampMixin, Base):
@@ -68,6 +93,25 @@ class Collaboration(UUIDMixin, TimestampMixin, Base):
         back_populates="collab", cascade="all, delete-orphan"
     )
     messages: Mapped[list["ChatMessage"]] = relationship(back_populates="collab", cascade="all, delete-orphan")
+    events: Mapped[list["CollabEvent"]] = relationship(back_populates="collab", cascade="all, delete-orphan")
+
+
+class CollabEvent(UUIDMixin, TimestampMixin, Base):
+    """One entry in a collaboration's activity timeline. Append-only: rows are
+    never mutated, so the full history survives after completion."""
+
+    __tablename__ = "collab_events"
+
+    collab_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("collaborations.id", ondelete="CASCADE"), index=True
+    )
+    type: Mapped[CollabEventType] = mapped_column(SAEnum(CollabEventType))
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    note: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    collab: Mapped["Collaboration"] = relationship(back_populates="events")
 
 
 class CollabSubmission(UUIDMixin, TimestampMixin, Base):
@@ -84,6 +128,29 @@ class CollabSubmission(UUIDMixin, TimestampMixin, Base):
     feedback: Mapped[str | None] = mapped_column(String, nullable=True)
 
     collab: Mapped["Collaboration"] = relationship(back_populates="submissions")
+
+
+class DesignerReview(UUIDMixin, TimestampMixin, Base):
+    """A rating a seller leaves for a designer after working together.
+
+    `seller_profile_id` / `collab_id` are null for seeded demo reviews;
+    `reviewer_name` is a display snapshot so the card renders either way.
+    """
+
+    __tablename__ = "designer_reviews"
+
+    designer_profile_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("designer_profiles.id", ondelete="CASCADE"), index=True
+    )
+    seller_profile_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("seller_profiles.id", ondelete="SET NULL"), nullable=True
+    )
+    collab_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("collaborations.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewer_name: Mapped[str] = mapped_column(String)
+    rating: Mapped[int] = mapped_column(Integer)  # 1–5
+    comment: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class ChatMessage(UUIDMixin, TimestampMixin, Base):

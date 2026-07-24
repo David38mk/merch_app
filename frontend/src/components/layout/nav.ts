@@ -1,5 +1,7 @@
 import {
   Boxes,
+  ChartLine,
+  LayoutGrid,
   LucideIcon,
   MessagesSquare,
   Package,
@@ -32,9 +34,12 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Seller",
     items: [
       { to: "/seller", label: "Studio", icon: Wand2, end: true },
+      { to: "/seller/catalog", label: "Catalog", icon: LayoutGrid },
       { to: "/seller/storefront", label: "Storefront", icon: Store },
       { to: "/seller/products", label: "Products", icon: Shirt },
-      { to: "/seller/hiring", label: "Hire designers", icon: Users },
+      { to: "/seller/orders", label: "Orders", icon: ShoppingBag },
+      { to: "/seller/analytics", label: "Analytics", icon: ChartLine },
+      { to: "/seller/hiring", label: "Job offers", icon: Users },
     ],
   },
   {

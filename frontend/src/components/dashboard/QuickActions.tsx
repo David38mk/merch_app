@@ -1,4 +1,4 @@
-import { BarChart3, Store, Users, Wand2, type LucideIcon } from "lucide-react";
+import { BarChart3, LayoutGrid, Store, Users, Wand2, type LucideIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { Card } from "../ui/Card";
@@ -12,8 +12,9 @@ interface Action {
 }
 
 const ACTIONS: Action[] = [
-  { label: "Create product", icon: Wand2, to: "/seller/products" },
+  { label: "Create product", icon: Wand2, to: "/seller/catalog" },
   { label: "Edit store", icon: Store, to: "/seller/storefront" },
+  { label: "Browse catalog", icon: LayoutGrid, to: "/seller/catalog" },
   { label: "Hire a designer", icon: Users, to: "/seller/hiring" },
   { label: "Analytics", icon: BarChart3, soon: true },
 ];

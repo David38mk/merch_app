@@ -39,8 +39,11 @@ def validate_password_strength(password: str) -> None:
 # token, and vice-versa.
 
 def _create_token(subject: str, token_type: str, expires_minutes: int) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=expires_minutes)
-    payload = {"sub": subject, "exp": expire, "type": token_type}
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(minutes=expires_minutes)
+    # iat lets "log out of all devices" work: tokens issued before the user's
+    # sessions_revoked_at timestamp are rejected at auth time.
+    payload = {"sub": subject, "exp": expire, "iat": now, "type": token_type}
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
@@ -70,3 +73,14 @@ def decode_token(token: str, expected_type: str) -> str | None:
 
 def decode_access_token(token: str) -> str | None:
     return decode_token(token, "access")
+
+
+def decode_access_payload(token: str) -> dict | None:
+    """Full payload (sub, iat, exp) of a valid access token — for session checks."""
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    except JWTError:
+        return None
+    if payload.get("type") != "access":
+        return None
+    return payload

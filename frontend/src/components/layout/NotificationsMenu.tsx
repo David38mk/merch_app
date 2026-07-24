@@ -78,6 +78,16 @@ export function NotificationsMenu() {
             )}
           </div>
 
+          <button
+            onClick={() => {
+              setOpen(false);
+              navigate("/notifications");
+            }}
+            className="block w-full border-b border-slate-100 px-4 py-2 text-center text-xs font-medium text-brand-600 hover:bg-slate-50"
+          >
+            View all notifications
+          </button>
+
           <div className="max-h-96 overflow-y-auto">
             {items.length === 0 ? (
               <div className="px-4 py-10 text-center text-sm text-slate-400">

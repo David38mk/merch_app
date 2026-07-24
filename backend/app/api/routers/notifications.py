@@ -50,6 +50,19 @@ def mark_seen(
     return NotificationOut.model_validate(n)
 
 
+@router.delete("/{notification_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_notification(
+    notification_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    n = db.get(Notification, notification_id)
+    if n is None or n.user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found.")
+    db.delete(n)
+    db.commit()
+
+
 @router.post("/read-all", status_code=status.HTTP_204_NO_CONTENT)
 def mark_all_read(
     db: Session = Depends(get_db),

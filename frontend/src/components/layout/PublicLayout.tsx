@@ -3,12 +3,13 @@ import { Link, NavLink, Outlet } from "react-router-dom";
 
 import { useAuth } from "../../auth";
 import { cn } from "../../lib/cn";
+import { CartButton } from "../cart/CartButton";
 import { Button } from "../ui/Button";
 import { Brand } from "./Brand";
 
 const links = [
   { to: "/", label: "Explore" },
-  { to: "/signup", label: "For creators" },
+  { to: "/sell", label: "For creators" },
 ];
 
 export function PublicLayout() {
@@ -21,7 +22,7 @@ export function PublicLayout() {
           <Brand />
           <nav className="hidden items-center gap-1 md:flex">
             {links
-              .filter((l) => l.to !== "/signup" || !user)
+              .filter((l) => l.to !== "/sell" || !user)
               .map((l) => (
               <NavLink
                 key={l.to}
@@ -38,6 +39,7 @@ export function PublicLayout() {
             ))}
           </nav>
           <div className="ml-auto flex items-center gap-2">
+            <CartButton />
             {user ? (
               <>
                 <Link to="/dashboard">

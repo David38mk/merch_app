@@ -15,7 +15,7 @@ interface Step {
 const STEPS: Step[] = [
   { key: "complete_profile", label: "Complete your profile", hint: "Brand name, country & currency", href: "/onboarding" },
   { key: "upload_logo", label: "Upload your logo", hint: "Make your storefront yours", href: "/seller/storefront" },
-  { key: "create_product", label: "Create your first product", hint: "Pick a blank, add a design", href: "/seller/products" },
+  { key: "create_product", label: "Create your first product", hint: "Pick a blank, add a design", href: "/seller/catalog" },
   { key: "publish_product", label: "Publish a product", hint: "List it on your storefront", href: "/seller/products" },
   { key: "publish_store", label: "Publish your store", hint: "Go live with a public URL", href: "/seller/storefront" },
 ];

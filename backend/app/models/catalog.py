@@ -1,7 +1,7 @@
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Enum as SAEnum, ForeignKey, Numeric, String
+from sqlalchemy import Boolean, Enum as SAEnum, ForeignKey, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -26,6 +26,8 @@ class BaseItem(UUIDMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String)
     description: Mapped[str | None] = mapped_column(String, nullable=True)
     base_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0)
+    image_url: Mapped[str | None] = mapped_column(String, nullable=True)  # 🔌 storage — blank photo
+    production_time: Mapped[str | None] = mapped_column(String, nullable=True)  # e.g. "3–5 business days"
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     print_shop: Mapped["PrintShopProfile"] = relationship(back_populates="base_items")  # noqa: F821
@@ -70,3 +72,13 @@ class PrintArea(UUIDMixin, Base):
     name: Mapped[str] = mapped_column(String)
 
     base_item: Mapped["BaseItem"] = relationship(back_populates="print_areas")
+
+
+class CatalogFavorite(UUIDMixin, TimestampMixin, Base):
+    """A seller's saved/favorited blank. Keyed by user so it works pre-profile."""
+
+    __tablename__ = "catalog_favorites"
+    __table_args__ = (UniqueConstraint("user_id", "base_item_id", name="uq_catalog_favorite"),)
+
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    base_item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("base_items.id", ondelete="CASCADE"))

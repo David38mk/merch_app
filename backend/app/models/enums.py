@@ -24,6 +24,16 @@ class AccountType(str, enum.Enum):
     COMPANY = "COMPANY"
 
 
+class AddressType(str, enum.Enum):
+    SHIPPING = "SHIPPING"
+    BILLING = "BILLING"
+
+
+class DiscountKind(str, enum.Enum):
+    PERCENT = "PERCENT"  # value = percent off (e.g. 10 → 10%)
+    FIXED = "FIXED"      # value = fixed amount off in €
+
+
 class SocialPlatform(str, enum.Enum):
     INSTAGRAM = "INSTAGRAM"
     YOUTUBE = "YOUTUBE"
@@ -45,9 +55,12 @@ class DesignSource(str, enum.Enum):
 
 
 class ShopItemState(str, enum.Enum):
-    LISTED = "LISTED"
-    UNLISTED = "UNLISTED"
+    LISTED = "LISTED"  # published — visible on the storefront
+    UNLISTED = "UNLISTED"  # draft — created but never/no longer published
     PENDING = "PENDING"  # still a collaboration
+    # Retired. Hidden from the storefront and the main tabs, but kept for history
+    # (and, later, for the orders that reference it). Restorable to a draft.
+    ARCHIVED = "ARCHIVED"
 
 
 class PrintOptionKind(str, enum.Enum):
@@ -62,9 +75,15 @@ class PaymentType(str, enum.Enum):
 
 
 class CallStatus(str, enum.Enum):
-    OPEN = "OPEN"
+    DRAFT = "DRAFT"  # not yet visible to designers
+    OPEN = "OPEN"  # published to the designer marketplace
     AWARDED = "AWARDED"
     CLOSED = "CLOSED"
+
+
+class AttachmentKind(str, enum.Enum):
+    REFERENCE = "REFERENCE"
+    BRAND_GUIDELINE = "BRAND_GUIDELINE"
 
 
 class BidStatus(str, enum.Enum):
@@ -89,6 +108,21 @@ class SubmissionKind(str, enum.Enum):
     FINAL = "FINAL"
 
 
+class CollabEventType(str, enum.Enum):
+    """Append-only activity log for a Collaboration (the workspace timeline)."""
+
+    CREATED = "CREATED"
+    STARTED = "STARTED"
+    DRAFT_SUBMITTED = "DRAFT_SUBMITTED"
+    REVISION_REQUESTED = "REVISION_REQUESTED"
+    DRAFT_APPROVED = "DRAFT_APPROVED"
+    FINAL_SUBMITTED = "FINAL_SUBMITTED"
+    APPROVED = "APPROVED"
+    PAYMENT_COMPLETED = "PAYMENT_COMPLETED"
+    PRODUCT_CREATED = "PRODUCT_CREATED"
+    COMPLETED = "COMPLETED"
+
+
 class SubmissionDecision(str, enum.Enum):
     PENDING = "PENDING"
     ACCEPTED = "ACCEPTED"
@@ -96,24 +130,47 @@ class SubmissionDecision(str, enum.Enum):
 
 
 class OrderStatus(str, enum.Enum):
-    PENDING = "PENDING"
+    """The MONEY facts about an order. Production progress lives on the items
+    (FulfillmentStatus); the 7 statuses sellers see are derived from both."""
+
+    PENDING = "PENDING"  # awaiting payment
     PAID = "PAID"
-    FULFILLED = "FULFILLED"
+    FULFILLED = "FULFILLED"  # legacy — display status is derived from items now
     CANCELLED = "CANCELLED"
+    REFUNDED = "REFUNDED"
 
 
 class FulfillmentStatus(str, enum.Enum):
     PAID = "PAID"
     IN_PRODUCTION = "IN_PRODUCTION"
-    HANDED_TO_SHIPMENT = "HANDED_TO_SHIPMENT"  # 🔌 seam: cargo/tracking after this
+    QUALITY_CHECK = "QUALITY_CHECK"
+    HANDED_TO_SHIPMENT = "HANDED_TO_SHIPMENT"  # legacy — SHIPPED supersedes it
+    SHIPPED = "SHIPPED"
+    DELIVERED = "DELIVERED"
+
+
+class OrderEventType(str, enum.Enum):
+    PLACED = "PLACED"
+    PAID = "PAID"
+    SENT_TO_PROVIDER = "SENT_TO_PROVIDER"  # lands in the print shop's queue
+    IN_PRODUCTION = "IN_PRODUCTION"
+    QUALITY_CHECK = "QUALITY_CHECK"
+    SHIPPED = "SHIPPED"
+    DELIVERED = "DELIVERED"
+    CANCELLED = "CANCELLED"
+    REFUNDED = "REFUNDED"
 
 
 class NotificationType(str, enum.Enum):
-    SALE = "SALE"
+    SALE = "SALE"  # a new sale happened
+    ORDER = "ORDER"  # an existing order progressed (production/shipped/delivered)
+    PAYMENT = "PAYMENT"  # money moved: refunds, payouts
     NEW_BID = "NEW_BID"
     BID_ACCEPTED = "BID_ACCEPTED"
     COLLAB_UPDATE = "COLLAB_UPDATE"
     NEW_PRODUCTION_ORDER = "NEW_PRODUCTION_ORDER"
+    ANNOUNCEMENT = "ANNOUNCEMENT"  # platform announcements
+    REVIEW = "REVIEW"  # ⏭️ product reviews, once buyers can leave them
     SYSTEM = "SYSTEM"
 
 

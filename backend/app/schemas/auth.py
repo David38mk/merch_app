@@ -1,4 +1,5 @@
 import uuid
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -11,18 +12,30 @@ def _check_password(v: str) -> str:
     return v
 
 
+def _check_terms(v: bool) -> bool:
+    if not v:
+        raise ValueError("You must accept the Terms of Service and Privacy Policy.")
+    return v
+
+
 class RegisterRequest(BaseModel):
     first_name: str = Field(min_length=1)
     last_name: str = Field(min_length=1)
     email: EmailStr
     password: str
+    # "buyer" → a pure Buyer account (shop + track orders). "seller" → Buyer+Seller
+    # and the storefront onboarding. Defaults to seller for the existing seller signup.
+    intent: Literal["buyer", "seller"] = "seller"
+    accept_terms: bool = False
 
     _pw = field_validator("password")(_check_password)
+    _terms = field_validator("accept_terms")(_check_terms)
 
 
 class GoogleAuthRequest(BaseModel):
     credential: str  # the Google ID token returned by Google Identity Services
     remember: bool = False
+    intent: Literal["buyer", "seller"] = "seller"
 
 
 class ForgotPasswordRequest(BaseModel):

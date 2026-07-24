@@ -113,12 +113,16 @@ export default function PrintShopCatalog() {
           {data.map((b) => (
             <Card key={b.id} className="p-5">
               <div className="flex items-start gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-400">
-                  <Package className="h-5 w-5" />
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-100 text-slate-400">
+                  {b.image_url ? (
+                    <img src={b.image_url} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <Package className="h-5 w-5" />
+                  )}
                 </span>
                 <div className="min-w-0">
                   <p className="truncate font-medium text-slate-900">{b.name}</p>
-                  {b.description && <p className="mt-0.5 line-clamp-2 text-sm text-slate-500">{b.description}</p>}
+                  <p className="mt-0.5 text-sm text-slate-500">{b.category ?? "Uncategorized"}</p>
                   <p className="mt-1.5 text-sm font-semibold text-brand-700">€{String(b.base_price)}</p>
                 </div>
               </div>

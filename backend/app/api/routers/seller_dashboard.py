@@ -38,9 +38,15 @@ def get_dashboard(
             )
         ) or 0
 
+    # A logo counts whether it's published (avatar_url) or still sitting in the
+    # website-builder draft — the checklist asks "did you upload one", not
+    # "did you publish the whole storefront yet".
+    draft = (p.storefront_draft or {}) if p else {}
+    has_logo = bool(p and (p.avatar_url or draft.get("logo_url")))
+
     checklist = ChecklistFlags(
         complete_profile=bool(p and p.onboarding_completed),
-        upload_logo=bool(p and p.avatar_url),
+        upload_logo=has_logo,
         create_product=product_count > 0,
         publish_product=live_count > 0,
         publish_store=bool(p and p.store_state == StoreState.LIVE),
@@ -66,7 +72,7 @@ def get_dashboard(
             is_published=bool(p and p.store_state == StoreState.LIVE),
             slug=p.slug if p else None,
             store_name=p.store_name if p else None,
-            has_logo=bool(p and p.avatar_url),
+            has_logo=has_logo,
         ),
         stats=DashboardStats(
             products=product_count,

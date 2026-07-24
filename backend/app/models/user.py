@@ -1,11 +1,20 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, DateTime, Enum as SAEnum, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Enum as SAEnum,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
-from app.models.enums import AccountType, PlanCode, Role, SocialPlatform, StoreState
+from app.models.enums import AccountType, AddressType, PlanCode, Role, SocialPlatform, StoreState
 
 
 class User(UUIDMixin, TimestampMixin, Base):
@@ -17,9 +26,15 @@ class User(UUIDMixin, TimestampMixin, Base):
     first_name: Mapped[str] = mapped_column(String, server_default="")
     last_name: Mapped[str] = mapped_column(String, server_default="")
     display_name: Mapped[str] = mapped_column(String)
+    phone: Mapped[str | None] = mapped_column(String, nullable=True)  # optional buyer contact
     avatar_url: Mapped[str | None] = mapped_column(String, nullable=True)  # 🔌 file storage
     # OAuth linkage — set when the account signed in via a provider (e.g. "google").
     auth_provider: Mapped[str | None] = mapped_column(String, nullable=True)
+    # "Log out of all devices": access tokens issued before this moment are dead.
+    sessions_revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # When the user accepted Terms & Privacy. Null for guest (passwordless) accounts
+    # created at checkout — they never went through signup.
+    accepted_terms_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     roles: Mapped[list["UserRole"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     seller_profile: Mapped["SellerProfile | None"] = relationship(back_populates="user", uselist=False)
@@ -53,7 +68,29 @@ class SellerProfile(UUIDMixin, TimestampMixin, Base):
     avatar_url: Mapped[str | None] = mapped_column(String, nullable=True)  # the brand logo 🔌 storage
     store_state: Mapped[StoreState] = mapped_column(SAEnum(StoreState), default=StoreState.DRAFT)
     # First time the seller published the storefront (null while never published).
+    # Also the flag that tells "Draft" (never published) apart from "Unpublished"
+    # (was live, taken down) — the status is derived, never stored twice.
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Most recent publish/unpublish. Bumped on every one, so it doubles as the
+    # cache key: the public page's ETag is built from it.
+    storefront_version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    last_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # ── website builder ──────────────────────────────────────────────────────
+    # Pending edits. The columns above/below stay the PUBLISHED truth the public
+    # storefront reads, so editing never touches the live page until Publish.
+    storefront_draft: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Published theme + store info + homepage curation.
+    theme_primary: Mapped[str | None] = mapped_column(String, nullable=True)
+    theme_accent: Mapped[str | None] = mapped_column(String, nullable=True)
+    button_style: Mapped[str | None] = mapped_column(String, nullable=True)  # rounded | pill | square
+    contact_email: Mapped[str | None] = mapped_column(String, nullable=True)
+    location: Mapped[str | None] = mapped_column(String, nullable=True)
+    # {"order": [shop_item_id...], "hidden": [...], "featured": [...]}
+    curation: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # Business information
+    tax_id: Mapped[str | None] = mapped_column(String, nullable=True)  # VAT / tax number
 
     # Onboarding
     country: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -110,6 +147,11 @@ class Settings(UUIDMixin, Base):
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True)
     dark_mode: Mapped[bool] = mapped_column(Boolean, default=False)
     language: Mapped[str] = mapped_column(String, default="en")
+    # Buyer's preferred display currency (ISO code). Prices are € in this build;
+    # this is a stored preference the storefront/checkout can honour once a real
+    # FX/pricing layer lands.
+    currency: Mapped[str] = mapped_column(String, default="EUR", server_default="EUR")
+    timezone: Mapped[str | None] = mapped_column(String, nullable=True)
     notifications_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     receive_newsletters: Mapped[bool] = mapped_column(Boolean, default=True)
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False)  # 🔌 email seam
@@ -130,6 +172,26 @@ class PayoutDetails(UUIDMixin, Base):
     city: Mapped[str | None] = mapped_column(String, nullable=True)
     postal_code: Mapped[str | None] = mapped_column(String, nullable=True)
     verified: Mapped[bool] = mapped_column(Boolean, default=False)  # ⏭️
+
+
+class Address(UUIDMixin, TimestampMixin, Base):
+    """A buyer's saved address. Tagged SHIPPING or BILLING, with at most one
+    default per type (enforced in the router). Used to prefill checkout."""
+
+    __tablename__ = "addresses"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    address_type: Mapped[AddressType] = mapped_column(SAEnum(AddressType))
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)  # default within its type
+
+    full_name: Mapped[str] = mapped_column(String)
+    phone: Mapped[str | None] = mapped_column(String, nullable=True)
+    line1: Mapped[str] = mapped_column(String)
+    line2: Mapped[str | None] = mapped_column(String, nullable=True)
+    city: Mapped[str] = mapped_column(String)
+    region: Mapped[str | None] = mapped_column(String, nullable=True)  # state / province
+    postal_code: Mapped[str] = mapped_column(String)
+    country: Mapped[str] = mapped_column(String)
 
 
 class SocialLink(UUIDMixin, Base):

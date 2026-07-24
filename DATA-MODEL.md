@@ -145,7 +145,8 @@ erDiagram
 ### Catalog (owned by PrintShop)
 
 **ItemCategory** — `id, name`
-**BaseItem** — `id, printShopProfileId FK, categoryId FK, name, description, basePrice, active`
+**BaseItem** — `id, printShopProfileId FK, categoryId FK, name, description, basePrice, imageUrl 🔌, active`
+**CatalogFavorite** — `id, userId FK, baseItemId FK, createdAt` (unique userId+baseItemId; a seller's saved blanks)
 **BaseItemVariant** — `id, baseItemId FK, size, color, priceDelta, isAvailable` (a purchasable size+color combo)
 **PrintOption** — `id, baseItemId FK, kind (MATERIAL/PRINT_TYPE), name, priceDelta`
 **PrintArea** — `id, baseItemId FK, name (front/back/…)` — a printable region on the blank

@@ -2,10 +2,14 @@ import { api } from "./client";
 
 export type NotificationType =
   | "SALE"
+  | "ORDER"
+  | "PAYMENT"
   | "NEW_BID"
   | "BID_ACCEPTED"
   | "COLLAB_UPDATE"
   | "NEW_PRODUCTION_ORDER"
+  | "ANNOUNCEMENT"
+  | "REVIEW"
   | "SYSTEM";
 
 export interface NotificationItem {
@@ -33,4 +37,8 @@ export async function markNotificationSeen(id: string): Promise<NotificationItem
 
 export async function markAllNotificationsRead(): Promise<void> {
   await api.post("/notifications/read-all");
+}
+
+export async function deleteNotification(id: string): Promise<void> {
+  await api.delete(`/notifications/${id}`);
 }

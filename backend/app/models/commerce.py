@@ -1,12 +1,22 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, Integer, Numeric
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    Enum as SAEnum,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
-from app.models.enums import FulfillmentStatus, OrderStatus
+from app.models.enums import DiscountKind, FulfillmentStatus, OrderEventType, OrderStatus
 
 
 class Cart(UUIDMixin, TimestampMixin, Base):
@@ -40,16 +50,39 @@ class Order(UUIDMixin, TimestampMixin, Base):
     seller_profile_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("seller_profiles.id"))
     status: Mapped[OrderStatus] = mapped_column(SAEnum(OrderStatus), default=OrderStatus.PENDING)
 
-    subtotal: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0)
+    subtotal: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0)  # product revenue (drives commission/payout)
     commission_rate: Mapped[Decimal] = mapped_column(Numeric(5, 4), default=0)  # snapshot of plan rate
     commission_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0)
     seller_payout_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0)
 
+    # ── buyer-facing money model (platform-absorbed; seller payout is unaffected) ──
+    discount_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0, server_default="0")
+    discount_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    shipping_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0, server_default="0")
+    tax_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0, server_default="0")
+    # What the buyer paid = subtotal − discount + shipping + tax.
+    total_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0, server_default="0")
+
     stripe_payment_intent_id: Mapped[str | None] = mapped_column(nullable=True)  # ⏭️🔌 gateway
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # ── shipping (entered at checkout; tracking added by the print shop) ─────
+    ship_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    ship_address: Mapped[str | None] = mapped_column(String, nullable=True)
+    ship_city: Mapped[str | None] = mapped_column(String, nullable=True)
+    ship_postal: Mapped[str | None] = mapped_column(String, nullable=True)
+    ship_country: Mapped[str | None] = mapped_column(String, nullable=True)
+    tracking_number: Mapped[str | None] = mapped_column(String, nullable=True)  # 🔌 cargo seam
+    shipped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    refunded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     seller: Mapped["SellerProfile"] = relationship(back_populates="orders")  # noqa: F821
     items: Mapped[list["OrderItem"]] = relationship(back_populates="order", cascade="all, delete-orphan")
+    events: Mapped[list["OrderEvent"]] = relationship(
+        back_populates="order", cascade="all, delete-orphan", order_by="OrderEvent.created_at"
+    )
 
 
 class OrderItem(UUIDMixin, Base):
@@ -63,8 +96,67 @@ class OrderItem(UUIDMixin, Base):
     print_shop_profile_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("printshop_profiles.id"))
     quantity: Mapped[int] = mapped_column(Integer, default=1)
     unit_price_at_purchase: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    # Snapshots — the product can be renamed, re-priced, re-costed or deleted
+    # after the sale, but the order must keep saying what was actually bought
+    # and what it cost to make at the time.
+    name_at_purchase: Mapped[str | None] = mapped_column(String, nullable=True)
+    production_cost_at_purchase: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    # Design placement at purchase — renders the mockup the buyer actually saw.
+    pos_x: Mapped[float | None] = mapped_column(nullable=True)
+    pos_y: Mapped[float | None] = mapped_column(nullable=True)
+    scale: Mapped[float | None] = mapped_column(nullable=True)
+    rotation: Mapped[float | None] = mapped_column(nullable=True)
     fulfillment_status: Mapped[FulfillmentStatus] = mapped_column(
         SAEnum(FulfillmentStatus), default=FulfillmentStatus.PAID
     )
 
     order: Mapped["Order"] = relationship(back_populates="items")
+
+
+class StoreVisit(UUIDMixin, Base):
+    """One unique visitor per storefront per day (IP-hashed, no cookies).
+    Deliberately coarse — enough for the analytics dashboard's visitors and
+    conversion numbers without any tracking consent burden."""
+
+    __tablename__ = "store_visits"
+    __table_args__ = (UniqueConstraint("seller_profile_id", "day", "ip_hash", name="uq_visit"),)
+
+    seller_profile_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("seller_profiles.id", ondelete="CASCADE")
+    )
+    day: Mapped[date] = mapped_column(Date)
+    ip_hash: Mapped[str] = mapped_column(String)
+
+
+class OrderEvent(UUIDMixin, TimestampMixin, Base):
+    """Append-only order timeline — placed, paid, production, shipped, … Never
+    updated or deleted, so the history a seller reads can't be rewritten."""
+
+    __tablename__ = "order_events"
+
+    order_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"))
+    type: Mapped[OrderEventType] = mapped_column(SAEnum(OrderEventType))
+    note: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    order: Mapped["Order"] = relationship(back_populates="events")
+
+
+class DiscountCode(UUIDMixin, TimestampMixin, Base):
+    """A promotional code applied at checkout. Platform-wide when
+    seller_profile_id is null, else valid only on that brand's orders.
+    The discount is platform-absorbed — seller payout is unaffected."""
+
+    __tablename__ = "discount_codes"
+
+    code: Mapped[str] = mapped_column(String, unique=True, index=True)  # stored uppercased
+    kind: Mapped[DiscountKind] = mapped_column(SAEnum(DiscountKind))
+    value: Mapped[Decimal] = mapped_column(Numeric(10, 2))  # percent (0–100) or € amount
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    min_subtotal: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # null → valid on any brand; set → only that brand's cart.
+    seller_profile_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("seller_profiles.id", ondelete="CASCADE"), nullable=True
+    )
+    max_uses: Mapped[int | None] = mapped_column(Integer, nullable=True)  # null = unlimited
+    used_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")

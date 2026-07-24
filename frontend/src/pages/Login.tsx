@@ -1,15 +1,20 @@
 import { useCallback, useRef, useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth";
 import { AuthCard, AuthDivider } from "../components/auth/AuthCard";
 import { GoogleButton } from "../components/auth/GoogleButton";
 import { Button } from "../components/ui/Button";
 import { apiError } from "../lib/apiError";
+import { returnTo } from "../lib/returnTo";
 
 export default function Login() {
   const { login, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  // Returning users with no origin land on their dashboard; a guard-bounce or a
+  // public "log in" link (?next=) sends them back where they were.
+  const dest = returnTo(location, "/dashboard");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(true);
@@ -26,7 +31,7 @@ export default function Login() {
     setBusy(true);
     try {
       await login(email, password, remember);
-      navigate("/dashboard");
+      navigate(dest, { replace: true });
     } catch (err) {
       setError(apiError(err, "Incorrect email or password."));
     } finally {
@@ -39,12 +44,12 @@ export default function Login() {
       setError(null);
       try {
         await loginWithGoogle(credential, rememberRef.current);
-        navigate("/dashboard");
+        navigate(dest, { replace: true });
       } catch (err) {
         setError(apiError(err, "Google sign-in failed."));
       }
     },
-    [loginWithGoogle, navigate],
+    [loginWithGoogle, navigate, dest],
   );
 
   return (
@@ -54,7 +59,11 @@ export default function Login() {
       footer={
         <>
           New here?{" "}
-          <Link to="/signup" className="font-medium text-brand-700 hover:underline">
+          <Link
+            to={`/signup${location.search}`}
+            state={location.state}
+            className="font-medium text-brand-700 hover:underline"
+          >
             Create an account
           </Link>
         </>

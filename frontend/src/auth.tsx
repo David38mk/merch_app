@@ -4,7 +4,8 @@ import {
   fetchMe,
   googleLogin,
   loginUser,
-  registerSeller,
+  registerAccount,
+  type AuthIntent,
   type RegisterInput,
   type UserPublic,
 } from "./api/auth";
@@ -15,7 +16,9 @@ interface AuthState {
   loading: boolean;
   login: (email: string, password: string, remember: boolean) => Promise<void>;
   register: (input: RegisterInput) => Promise<{ verifyRequired: boolean }>;
-  loginWithGoogle: (credential: string, remember: boolean) => Promise<void>;
+  loginWithGoogle: (credential: string, remember: boolean, intent?: AuthIntent) => Promise<void>;
+  /** Re-fetch the current user (e.g. after gaining a new role). */
+  refreshUser: () => Promise<void>;
   logout: () => void;
 }
 
@@ -50,7 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function register(input: RegisterInput) {
-    const res = await registerSeller(input);
+    const res = await registerAccount(input);
     if (res.email_verification_required) {
       // Don't log in until the email is verified — the signup page routes to /verify-email.
       return { verifyRequired: true };
@@ -60,8 +63,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { verifyRequired: false };
   }
 
-  async function loginWithGoogle(credential: string, remember: boolean) {
-    setToken(await googleLogin(credential, remember), remember);
+  async function loginWithGoogle(credential: string, remember: boolean, intent: AuthIntent = "seller") {
+    setToken(await googleLogin(credential, remember, intent), remember);
+    setUser(await fetchMe());
+  }
+
+  async function refreshUser() {
     setUser(await fetchMe());
   }
 
@@ -71,7 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, loginWithGoogle, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, loginWithGoogle, refreshUser, logout }}>
       {children}
     </AuthContext.Provider>
   );
