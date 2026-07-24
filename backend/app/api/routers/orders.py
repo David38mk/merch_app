@@ -19,10 +19,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_optional_user, require_role
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.discounts import resolve_discount
 from app.core.notify import push
-from app.core.pricing import commission_rate, order_totals
+from app.core.pricing import SHIPPING_METHODS, commission_rate, order_totals
+from app.core.security import create_confirm_token
+from app.seams.delivery import send_order_confirmation
 from app.models.catalog import BaseItem, BaseItemVariant
 from app.models.commerce import Order, OrderEvent, OrderItem
 from app.models.design import Design
@@ -108,6 +111,10 @@ class CheckoutIn(BaseModel):
     postal: str = Field(min_length=1)
     country: str = Field(min_length=1)
     discount_code: str | None = None
+    phone: str | None = None
+    apartment: str | None = None
+    shipping_method: str = "standard"
+    idempotency_key: str | None = None
 
 
 class CartLine(BaseModel):
@@ -128,6 +135,11 @@ class CartCheckoutIn(BaseModel):
     postal: str = Field(min_length=1)
     country: str = Field(min_length=1)
     discount_code: str | None = None
+    phone: str | None = None
+    apartment: str | None = None
+    shipping_method: str = "standard"
+    # A repeat submit with the same key returns the first order (dedup).
+    idempotency_key: str | None = None
 
 
 class CheckoutOut(BaseModel):
@@ -135,6 +147,8 @@ class CheckoutOut(BaseModel):
     short_id: str
     total: Decimal
     status: str
+    # Guest-safe link token for the order-confirmation page.
+    confirmation_token: str = ""
 
 
 class OrderItemOut(BaseModel):
@@ -308,13 +322,31 @@ def _buyer_for(db: Session, name: str, email: str) -> User:
     return user
 
 
-def _resolve_totals(db: Session, seller: SellerProfile, subtotal: Decimal, code: str | None):
+def _resolve_totals(db: Session, seller: SellerProfile, subtotal: Decimal, code: str | None, method: str = "standard"):
     """Resolve a discount code (400 on an invalid one) and compute the buyer
-    money breakdown. Returns (discount_row_or_None, totals_dict)."""
+    money breakdown for the chosen shipping method. Returns (row, totals)."""
+    if method not in SHIPPING_METHODS:
+        method = "standard"
     row, amount, error = resolve_discount(db, code, seller.id, subtotal)
     if error:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error)
-    return row, order_totals(subtotal, amount)
+    return row, order_totals(subtotal, amount, method)
+
+
+def _full_address(address: str, apartment: str | None) -> str:
+    apt = (apartment or "").strip()
+    return f"{address.strip()}, {apt}" if apt else address.strip()
+
+
+def _confirmation(order: Order) -> str:
+    return create_confirm_token(str(order.id))
+
+
+def _idempotent_hit(db: Session, key: str | None) -> Order | None:
+    """Return the order already created under this key, if any (dedup)."""
+    if not key:
+        return None
+    return db.scalar(select(Order).where(Order.idempotency_key == key))
 
 
 def _item_out(db: Session, it: OrderItem) -> OrderItemOut:
@@ -390,6 +422,14 @@ def checkout(
     """Buy-now with a stubbed payment (seam #3): the order is created and marked
     paid in one step. Replacing the stub with Stripe later only swaps the
     charge call — the order shape stays."""
+    # Duplicate-submit guard: a repeat with the same key returns the first order.
+    dup = _idempotent_hit(db, payload.idempotency_key)
+    if dup is not None:
+        return CheckoutOut(
+            order_id=dup.id, short_id=short_id(dup.id), total=dup.total_amount,
+            status="PAID", confirmation_token=_confirmation(dup),
+        )
+
     seller = db.scalar(select(SellerProfile).where(SellerProfile.slug == slug))
     if seller is None or seller.store_state != StoreState.LIVE:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Storefront not found.")
@@ -423,7 +463,7 @@ def checkout(
     # print run costs minus the platform fee. Shipping/tax/discount are
     # buyer-facing and platform-absorbed — they never touch the payout.
     production_total = (Decimal(item.production_cost) * payload.quantity).quantize(Decimal("0.01"))
-    disc_row, totals = _resolve_totals(db, seller, subtotal, payload.discount_code)
+    disc_row, totals = _resolve_totals(db, seller, subtotal, payload.discount_code, payload.shipping_method)
 
     order = Order(
         buyer_user_id=buyer.id,
@@ -438,8 +478,11 @@ def checkout(
         shipping_amount=totals["shipping"],
         tax_amount=totals["tax"],
         total_amount=totals["total"],
+        shipping_method=payload.shipping_method,
+        idempotency_key=payload.idempotency_key,
         ship_name=payload.name.strip(),
-        ship_address=payload.address.strip(),
+        ship_phone=(payload.phone or "").strip() or None,
+        ship_address=_full_address(payload.address, payload.apartment),
         ship_city=payload.city.strip(),
         ship_postal=payload.postal.strip(),
         ship_country=payload.country.strip(),
@@ -496,7 +539,13 @@ def checkout(
         )
 
     db.commit()
-    return CheckoutOut(order_id=order.id, short_id=short_id(order.id), total=totals["total"], status="PAID")
+    token = _confirmation(order)
+    send_order_confirmation(payload.email, short_id(order.id), str(totals["total"]),
+                            f"{settings.FRONTEND_ORIGIN}/order/confirmed/{token}")
+    return CheckoutOut(
+        order_id=order.id, short_id=short_id(order.id), total=totals["total"],
+        status="PAID", confirmation_token=token,
+    )
 
 
 @public.post("/{slug}/checkout-cart", response_model=CheckoutOut, status_code=status.HTTP_201_CREATED)
@@ -508,6 +557,13 @@ def checkout_cart(
 ) -> CheckoutOut:
     """Check out a whole cart for ONE brand as a single multi-line order. Every
     line is validated for stock before payment (seam #3, stubbed)."""
+    dup = _idempotent_hit(db, payload.idempotency_key)
+    if dup is not None:
+        return CheckoutOut(
+            order_id=dup.id, short_id=short_id(dup.id), total=dup.total_amount,
+            status="PAID", confirmation_token=_confirmation(dup),
+        )
+
     seller = db.scalar(select(SellerProfile).where(SellerProfile.slug == slug))
     if seller is None or seller.store_state != StoreState.LIVE:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Storefront not found.")
@@ -539,7 +595,7 @@ def checkout_cart(
     production_total = sum(
         (Decimal(i.production_cost) * q for i, _, _, q in resolved), Decimal("0")
     ).quantize(Decimal("0.01"))
-    disc_row, totals = _resolve_totals(db, seller, subtotal, payload.discount_code)
+    disc_row, totals = _resolve_totals(db, seller, subtotal, payload.discount_code, payload.shipping_method)
 
     order = Order(
         buyer_user_id=buyer.id,
@@ -554,8 +610,11 @@ def checkout_cart(
         shipping_amount=totals["shipping"],
         tax_amount=totals["tax"],
         total_amount=totals["total"],
+        shipping_method=payload.shipping_method,
+        idempotency_key=payload.idempotency_key,
         ship_name=payload.name.strip(),
-        ship_address=payload.address.strip(),
+        ship_phone=(payload.phone or "").strip() or None,
+        ship_address=_full_address(payload.address, payload.apartment),
         ship_city=payload.city.strip(),
         ship_postal=payload.postal.strip(),
         ship_country=payload.country.strip(),
@@ -614,7 +673,13 @@ def checkout_cart(
     )
 
     db.commit()
-    return CheckoutOut(order_id=order.id, short_id=short_id(order.id), total=totals["total"], status="PAID")
+    token = _confirmation(order)
+    send_order_confirmation(payload.email, short_id(order.id), str(totals["total"]),
+                            f"{settings.FRONTEND_ORIGIN}/order/confirmed/{token}")
+    return CheckoutOut(
+        order_id=order.id, short_id=short_id(order.id), total=totals["total"],
+        status="PAID", confirmation_token=token,
+    )
 
 
 # ── seller orders ────────────────────────────────────────────────────────────

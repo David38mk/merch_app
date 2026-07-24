@@ -17,6 +17,14 @@ def send_verification(to: str, verify_url: str) -> None:
     send_email(to, "Verify your MyHappinessClub email", f"Verification link: {verify_url}")
 
 
+def send_order_confirmation(to: str, short_id: str, total: str, confirm_url: str) -> None:
+    send_email(
+        to,
+        f"Your MyHappinessClub order #{short_id} is confirmed",
+        f"Thanks for your order! Total paid: €{total}.\nView your confirmation: {confirm_url}",
+    )
+
+
 def create_shipment(order_item_id: str) -> dict:
     """STUB: no real cargo. Real impl: cargo/courier API → tracking number + notifications."""
     return {"status": "stub", "tracking_number": None, "order_item_id": order_item_id}

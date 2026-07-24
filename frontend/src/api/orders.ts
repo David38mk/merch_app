@@ -28,6 +28,7 @@ export interface CheckoutResult {
   short_id: string;
   total: string;
   status: string;
+  confirmation_token: string;
 }
 
 export interface OrderListItem {
@@ -144,6 +145,10 @@ export interface CartCheckoutPayload {
   postal: string;
   country: string;
   discount_code?: string | null;
+  phone?: string | null;
+  apartment?: string | null;
+  shipping_method?: string;
+  idempotency_key?: string;
 }
 
 /** Check out one brand's cart lines as a single multi-line order. */

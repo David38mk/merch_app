@@ -8,8 +8,10 @@ import ForgotPassword from "./pages/ForgotPassword";
 import Landing from "./pages/Landing";
 import { Privacy, Terms } from "./pages/Legal";
 import Cart from "./pages/Cart";
+import Checkout from "./pages/Checkout";
 import Login from "./pages/Login";
 import Marketplace from "./pages/Marketplace";
+import OrderConfirmed from "./pages/OrderConfirmed";
 import ProductDetails from "./pages/ProductDetails";
 import NotFound from "./pages/NotFound";
 import ResetPassword from "./pages/ResetPassword";
@@ -74,6 +76,8 @@ export default function App() {
         <Route path="/marketplace" element={<Marketplace />} />
         <Route path="/p/:id" element={<ProductDetails />} />
         <Route path="/cart" element={<Cart />} />
+        <Route path="/checkout/:slug" element={<Checkout />} />
+        <Route path="/order/confirmed/:token" element={<OrderConfirmed />} />
         <Route
           path="/login"
           element={

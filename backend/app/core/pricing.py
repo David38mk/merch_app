@@ -31,25 +31,47 @@ def min_price(cost: Decimal, rate: Decimal) -> Decimal:
 
 _CENTS = Decimal("0.01")
 
+# Shipping options shown at checkout. Real cargo pricing is deferred (seam #4);
+# these are config-shaped stand-ins. `free_over` waives the fee above a subtotal.
+SHIPPING_METHODS: dict[str, dict] = {
+    "standard": {
+        "label": "Standard",
+        "estimate": "5–7 business days",
+        "cost": lambda: Decimal(settings.SHIPPING_FLAT),
+        "free_over": lambda: Decimal(settings.FREE_SHIPPING_OVER),
+    },
+    "express": {
+        "label": "Express",
+        "estimate": "2–3 business days",
+        "cost": lambda: Decimal("12.99"),
+        "free_over": lambda: None,
+    },
+}
 
-def shipping_for(subtotal: Decimal) -> Decimal:
-    """Flat shipping, waived above the free-shipping threshold (real cargo
-    pricing is deferred, seam #4). Zero on an empty subtotal."""
+DEFAULT_METHOD = "standard"
+
+
+def shipping_for(subtotal: Decimal, method: str = DEFAULT_METHOD) -> Decimal:
+    """Cost of the chosen shipping method for a subtotal, waived above its
+    free-shipping threshold. Zero on an empty subtotal."""
     if subtotal <= 0:
         return Decimal("0.00")
-    if subtotal >= Decimal(settings.FREE_SHIPPING_OVER):
+    spec = SHIPPING_METHODS.get(method) or SHIPPING_METHODS[DEFAULT_METHOD]
+    free_over = spec["free_over"]()
+    if free_over is not None and subtotal >= free_over:
         return Decimal("0.00")
-    return Decimal(settings.SHIPPING_FLAT).quantize(_CENTS)
+    return spec["cost"]().quantize(_CENTS)
 
 
-def order_totals(subtotal: Decimal, discount: Decimal) -> dict[str, Decimal]:
-    """Given product subtotal and a resolved discount, return the buyer-facing
-    money breakdown. Discount is platform-absorbed — it never touches payout."""
+def order_totals(subtotal: Decimal, discount: Decimal, method: str = DEFAULT_METHOD) -> dict[str, Decimal]:
+    """Given product subtotal, a resolved discount and a shipping method, return
+    the buyer-facing money breakdown. Discount is platform-absorbed — it never
+    touches payout."""
     subtotal = Decimal(subtotal).quantize(_CENTS)
     discount = min(Decimal(discount).quantize(_CENTS), subtotal)  # never below zero
     taxable = subtotal - discount
     tax = (taxable * Decimal(settings.TAX_RATE)).quantize(_CENTS)
-    shipping = shipping_for(subtotal)
+    shipping = shipping_for(subtotal, method)
     total = (taxable + shipping + tax).quantize(_CENTS)
     return {"discount": discount, "shipping": shipping, "tax": tax, "total": total}
 

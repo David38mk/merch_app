@@ -1,10 +1,9 @@
 import { useMutation } from "@tanstack/react-query";
 import { Loader2, Minus, Plus, ShoppingBag, Store, Tag, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { validateDiscount } from "../api/marketplace";
-import { CheckoutModal } from "../components/cart/CheckoutModal";
 import { DesignPreviewThumb } from "../components/design/DesignPreviewThumb";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
@@ -63,8 +62,8 @@ interface Applied {
 }
 
 function BrandGroup({ slug, name, items }: { slug: string; name: string; items: CartItem[] }) {
-  const { setQty, remove, clearBrand } = useCart();
-  const [checkout, setCheckout] = useState(false);
+  const { setQty, remove } = useCart();
+  const navigate = useNavigate();
   const [code, setCode] = useState("");
   const [applied, setApplied] = useState<Applied | null>(null);
   const [discountError, setDiscountError] = useState<string | null>(null);
@@ -190,25 +189,13 @@ function BrandGroup({ slug, name, items }: { slug: string; name: string; items: 
       </dl>
 
       <div className="px-5 pb-5">
-        <Button className="w-full" onClick={() => setCheckout(true)}>
+        <Button
+          className="w-full"
+          onClick={() => navigate(`/checkout/${slug}`, { state: { discountCode: applied?.code ?? null } })}
+        >
           Checkout · €{totals.total.toFixed(2)}
         </Button>
       </div>
-
-      {checkout && (
-        <CheckoutModal
-          slug={slug}
-          brandName={name}
-          items={items}
-          discountCode={applied?.code ?? null}
-          discountAmount={applied?.amount ?? 0}
-          onClose={() => setCheckout(false)}
-          onDone={() => {
-            clearBrand(slug);
-            setCheckout(false);
-          }}
-        />
-      )}
     </Card>
   );
 }

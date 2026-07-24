@@ -15,18 +15,21 @@ from pydantic import BaseModel
 from sqlalchemy import distinct, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
+import uuid
+from datetime import datetime
 from decimal import Decimal
 
 from app.core.database import get_db
 from app.core.discounts import resolve_discount
-from app.core.pricing import order_totals
+from app.core.pricing import SHIPPING_METHODS, order_totals, shipping_for
+from app.core.security import decode_token
 from app.core.slug import normalize_slug
 from app.models.catalog import BaseItem, BaseItemVariant, ItemCategory, PrintOption
 from app.models.commerce import Order, OrderItem, StoreVisit
 from app.models.design import Design
 from app.models.enums import OrderStatus, PrintOptionKind, ShopItemState, StoreState
 from app.models.shop import ShopItem
-from app.models.user import SellerProfile
+from app.models.user import SellerProfile, User
 
 router = APIRouter(prefix="/marketplace", tags=["marketplace"])
 
@@ -469,6 +472,125 @@ def validate_discount(payload: DiscountValidateIn, db: Session = Depends(get_db)
     return DiscountValidateOut(
         valid=True, amount=amount, kind=row.kind.value if row else None,
         discount=totals["discount"], shipping=totals["shipping"], tax=totals["tax"], total=totals["total"],
+    )
+
+
+# ── shipping methods + order confirmation (checkout) ──────────────────────────
+
+class ShippingMethodOut(BaseModel):
+    id: str
+    label: str
+    estimate: str
+    cost: Decimal
+    free: bool
+
+
+@router.get("/shipping-methods", response_model=list[ShippingMethodOut])
+def shipping_methods(subtotal: Decimal = Query(default=Decimal("0"))) -> list[ShippingMethodOut]:
+    """The shipping options + their cost for a given cart subtotal (so free
+    thresholds are reflected in the price shown)."""
+    out = []
+    for mid, spec in SHIPPING_METHODS.items():
+        cost = shipping_for(subtotal, mid)
+        out.append(ShippingMethodOut(id=mid, label=spec["label"], estimate=spec["estimate"], cost=cost, free=cost == 0))
+    return out
+
+
+class ConfItem(BaseModel):
+    name: str
+    color: str | None
+    size: str | None
+    quantity: int
+    unit_price: Decimal
+    base_image_url: str | None
+    design_url: str | None
+    pos_x: float
+    pos_y: float
+    scale: float
+    rotation: float
+
+
+class OrderConfirmation(BaseModel):
+    short_id: str
+    created_at: datetime
+    email: str | None
+    store_name: str | None
+    store_slug: str | None
+    items: list[ConfItem]
+    ship_name: str | None
+    ship_phone: str | None
+    ship_address: str | None
+    ship_city: str | None
+    ship_postal: str | None
+    ship_country: str | None
+    shipping_method: str | None
+    shipping_estimate: str | None
+    subtotal: Decimal
+    discount_amount: Decimal
+    discount_code: str | None
+    shipping_amount: Decimal
+    tax_amount: Decimal
+    total: Decimal
+
+
+@router.get("/order-confirmation", response_model=OrderConfirmation)
+def order_confirmation(token: str, db: Session = Depends(get_db)) -> OrderConfirmation:
+    """Guest-safe order confirmation, addressed only by a signed token from
+    checkout — no order is reachable by guessing an id."""
+    subject = decode_token(token, "confirm")
+    if subject is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired confirmation link.")
+    order = db.scalar(
+        select(Order).where(Order.id == uuid.UUID(subject)).options(selectinload(Order.items))
+    )
+    if order is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
+
+    store = db.get(SellerProfile, order.seller_profile_id)
+    buyer = db.get(User, order.buyer_user_id)
+    method_spec = SHIPPING_METHODS.get(order.shipping_method or "") if order.shipping_method else None
+
+    items = []
+    for it in order.items:
+        shop = db.get(ShopItem, it.shop_item_id)
+        variant = db.get(BaseItemVariant, it.base_item_variant_id)
+        base = db.get(BaseItem, shop.base_item_id) if shop else None
+        design = db.get(Design, shop.design_id) if shop and shop.design_id else None
+        items.append(ConfItem(
+            name=it.name_at_purchase or (shop.name if shop else "Product"),
+            color=variant.color if variant else None,
+            size=variant.size if variant else None,
+            quantity=it.quantity,
+            unit_price=it.unit_price_at_purchase,
+            base_image_url=base.image_url if base else None,
+            design_url=design.resource_url if design else None,
+            pos_x=it.pos_x if it.pos_x is not None else 50,
+            pos_y=it.pos_y if it.pos_y is not None else 45,
+            scale=it.scale if it.scale is not None else 0.45,
+            rotation=it.rotation if it.rotation is not None else 0,
+        ))
+
+    return OrderConfirmation(
+        short_id=order.id.hex[:8].upper(),
+        created_at=order.created_at,
+        email=buyer.email if buyer else None,
+        store_name=store.store_name if store else None,
+        store_slug=store.slug if store else None,
+        items=items,
+        ship_name=order.ship_name,
+        ship_phone=order.ship_phone,
+        ship_address=order.ship_address,
+        ship_city=order.ship_city,
+        ship_postal=order.ship_postal,
+        ship_country=order.ship_country,
+        shipping_method=method_spec["label"] if method_spec else (order.shipping_method or None),
+        shipping_estimate=method_spec["estimate"] if method_spec else None,
+        subtotal=order.subtotal,
+        discount_amount=order.discount_amount,
+        discount_code=order.discount_code,
+        shipping_amount=order.shipping_amount,
+        tax_amount=order.tax_amount,
+        total=order.total_amount,
     )
 
 

@@ -60,6 +60,12 @@ def create_verify_token(subject: str) -> str:
     return _create_token(subject, "verify", settings.VERIFY_TOKEN_EXPIRE_MINUTES)
 
 
+def create_confirm_token(subject: str) -> str:
+    """Order-confirmation link token (guest-safe, refreshable). Long-lived so a
+    buyer can revisit their confirmation for a while."""
+    return _create_token(subject, "confirm", 60 * 24 * 30)  # 30 days
+
+
 def decode_token(token: str, expected_type: str) -> str | None:
     """Return the subject (user id) if the token is valid AND of the expected type."""
     try:

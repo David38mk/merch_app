@@ -65,9 +65,14 @@ class Order(UUIDMixin, TimestampMixin, Base):
 
     stripe_payment_intent_id: Mapped[str | None] = mapped_column(nullable=True)  # ⏭️🔌 gateway
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Client-generated per checkout attempt — a repeat submit (double-click,
+    # retry, back-button) returns the same order instead of creating a duplicate.
+    idempotency_key: Mapped[str | None] = mapped_column(String, unique=True, nullable=True)
+    shipping_method: Mapped[str | None] = mapped_column(String, nullable=True)  # "standard" | "express"
 
     # ── shipping (entered at checkout; tracking added by the print shop) ─────
     ship_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    ship_phone: Mapped[str | None] = mapped_column(String, nullable=True)
     ship_address: Mapped[str | None] = mapped_column(String, nullable=True)
     ship_city: Mapped[str | None] = mapped_column(String, nullable=True)
     ship_postal: Mapped[str | None] = mapped_column(String, nullable=True)

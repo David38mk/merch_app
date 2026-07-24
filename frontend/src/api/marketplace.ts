@@ -145,3 +145,56 @@ export interface DiscountValidation {
 export async function validateDiscount(code: string, slug: string, subtotal: number): Promise<DiscountValidation> {
   return (await api.post<DiscountValidation>("/marketplace/discount/validate", { code, slug, subtotal })).data;
 }
+
+export interface ShippingMethod {
+  id: string;
+  label: string;
+  estimate: string;
+  cost: string;
+  free: boolean;
+}
+
+export async function getShippingMethods(subtotal: number): Promise<ShippingMethod[]> {
+  return (await api.get<ShippingMethod[]>("/marketplace/shipping-methods", { params: { subtotal } })).data;
+}
+
+export interface ConfirmationItem {
+  name: string;
+  color: string | null;
+  size: string | null;
+  quantity: number;
+  unit_price: string;
+  base_image_url: string | null;
+  design_url: string | null;
+  pos_x: number;
+  pos_y: number;
+  scale: number;
+  rotation: number;
+}
+
+export interface OrderConfirmation {
+  short_id: string;
+  created_at: string;
+  email: string | null;
+  store_name: string | null;
+  store_slug: string | null;
+  items: ConfirmationItem[];
+  ship_name: string | null;
+  ship_phone: string | null;
+  ship_address: string | null;
+  ship_city: string | null;
+  ship_postal: string | null;
+  ship_country: string | null;
+  shipping_method: string | null;
+  shipping_estimate: string | null;
+  subtotal: string;
+  discount_amount: string;
+  discount_code: string | null;
+  shipping_amount: string;
+  tax_amount: string;
+  total: string;
+}
+
+export async function getOrderConfirmation(token: string): Promise<OrderConfirmation> {
+  return (await api.get<OrderConfirmation>("/marketplace/order-confirmation", { params: { token } })).data;
+}
