@@ -126,9 +126,32 @@ class DesignerProfile(UUIDMixin, TimestampMixin, Base):
     cover_url: Mapped[str | None] = mapped_column(String, nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String, nullable=True)
     portfolio_state: Mapped[StoreState] = mapped_column(SAEnum(StoreState), default=StoreState.DRAFT)
+    # ── onboarding profile (all editable later) ──
+    country: Mapped[str | None] = mapped_column(String, nullable=True)
+    experience: Mapped[str | None] = mapped_column(String, nullable=True)  # Beginner/Intermediate/Professional
+    skills: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")  # design categories
+    portfolio_links: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")  # extra portfolio URLs
+    onboarding_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="designer_profile")
     bids: Mapped[list["Bid"]] = relationship(back_populates="designer")  # noqa: F821
+    portfolio_items: Mapped[list["DesignerPortfolioItem"]] = relationship(
+        back_populates="designer", cascade="all, delete-orphan", order_by="DesignerPortfolioItem.created_at"
+    )
+
+
+class DesignerPortfolioItem(UUIDMixin, TimestampMixin, Base):
+    """An uploaded portfolio image (🔌 storage seam). External portfolio links
+    live as a JSON list on the profile; these are the uploaded showcase pieces."""
+
+    __tablename__ = "designer_portfolio_items"
+
+    designer_profile_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("designer_profiles.id", ondelete="CASCADE"), index=True
+    )
+    image_url: Mapped[str] = mapped_column(String)
+
+    designer: Mapped["DesignerProfile"] = relationship(back_populates="portfolio_items")
 
 
 class PrintShopProfile(UUIDMixin, TimestampMixin, Base):

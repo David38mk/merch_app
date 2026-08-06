@@ -47,6 +47,7 @@ import SellerAnalytics from "./pages/dashboard/seller/SellerAnalytics";
 import SellerOrders from "./pages/dashboard/seller/SellerOrders";
 import SellerStudio from "./pages/dashboard/seller/SellerStudio";
 import StorefrontPreview from "./pages/dashboard/seller/StorefrontPreview";
+import DesignerOnboarding from "./pages/onboarding/DesignerOnboarding";
 import SellerOnboarding from "./pages/onboarding/SellerOnboarding";
 import Storefront from "./pages/store/Storefront";
 
@@ -139,6 +140,14 @@ export default function App() {
         element={
           <RequireAuth>
             <SellerOnboarding />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/designer/onboarding"
+        element={
+          <RequireAuth>
+            <DesignerOnboarding />
           </RequireAuth>
         }
       />

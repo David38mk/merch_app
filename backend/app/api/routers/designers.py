@@ -3,20 +3,30 @@ so they can apply to job calls."""
 
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.core.config import settings as app_settings
 from app.core.database import get_db
 from app.core.designer_stats import completed_counts, rating_stats, response_hours
 from app.models.design import Design
 from app.models.enums import Role
 from app.models.hiring import DesignerReview
-from app.models.user import DesignerProfile, User, UserRole
+from app.models.user import DesignerPortfolioItem, DesignerProfile, User, UserRole
+from app.seams.storage import StorageError, delete_image, save_image
+
+# The fixed onboarding vocabularies (also used to validate patches).
+SKILL_OPTIONS = [
+    "Graphic Design", "Illustration", "Typography", "Branding",
+    "Streetwear", "Merchandise", "Logo Design", "Other",
+]
+EXPERIENCE_OPTIONS = ["Beginner", "Intermediate", "Professional"]
+MAX_PORTFOLIO_LINKS = 10
 
 router = APIRouter(prefix="/designer", tags=["designer"])
 # Public-facing designer profiles live under a separate prefix so /designer/me
@@ -75,6 +85,229 @@ def enable_designer(
     return profile
 
 
+# ── onboarding + profile editing ─────────────────────────────────────────────
+
+class PortfolioItemOut(BaseModel):
+    id: uuid.UUID
+    image_url: str
+
+
+class DesignerOnboardingOut(BaseModel):
+    display_name: str
+    bio: str | None
+    country: str | None
+    avatar_url: str | None
+    cover_url: str | None
+    skills: list[str]
+    experience: str | None
+    portfolio_links: list[str]
+    portfolio_items: list[PortfolioItemOut]
+    website: str | None
+    behance: str | None
+    dribbble: str | None
+    instagram: str | None
+    onboarding_completed: bool
+
+
+class DesignerProfilePatch(BaseModel):
+    display_name: str | None = Field(default=None, min_length=1, max_length=80)
+    bio: str | None = None
+    country: str | None = None
+    skills: list[str] | None = None
+    experience: str | None = None
+    portfolio_links: list[str] | None = None
+    website: str | None = None
+    behance: str | None = None
+    dribbble: str | None = None
+    instagram: str | None = None
+
+    @field_validator("skills")
+    @classmethod
+    def _valid_skills(cls, v: list[str] | None) -> list[str] | None:
+        if v is not None:
+            bad = [s for s in v if s not in SKILL_OPTIONS]
+            if bad:
+                raise ValueError(f"Unknown skill(s): {', '.join(bad)}.")
+        return v
+
+    @field_validator("experience")
+    @classmethod
+    def _valid_experience(cls, v: str | None) -> str | None:
+        if v and v not in EXPERIENCE_OPTIONS:
+            raise ValueError("Experience must be Beginner, Intermediate or Professional.")
+        return v
+
+    @field_validator("portfolio_links")
+    @classmethod
+    def _clean_links(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return None
+        links = [x.strip() for x in v if x.strip()]
+        if len(links) > MAX_PORTFOLIO_LINKS:
+            raise ValueError(f"At most {MAX_PORTFOLIO_LINKS} portfolio links.")
+        return links
+
+
+def _my_profile(db: Session, user: User) -> DesignerProfile:
+    p = db.scalar(select(DesignerProfile).where(DesignerProfile.user_id == user.id))
+    if p is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No designer profile — enable it first.")
+    return p
+
+
+def _onboarding_out(p: DesignerProfile) -> DesignerOnboardingOut:
+    return DesignerOnboardingOut(
+        display_name=p.display_name,
+        bio=p.bio,
+        country=p.country,
+        avatar_url=p.avatar_url,
+        cover_url=p.cover_url,
+        skills=list(p.skills or []),
+        experience=p.experience,
+        portfolio_links=list(p.portfolio_links or []),
+        portfolio_items=[PortfolioItemOut(id=i.id, image_url=i.image_url) for i in p.portfolio_items],
+        website=p.website,
+        behance=p.behance,
+        dribbble=p.dribbble,
+        instagram=p.instagram,
+        onboarding_completed=p.onboarding_completed_at is not None,
+    )
+
+
+@router.get("/onboarding/options")
+def onboarding_options() -> dict:
+    """The fixed skill + experience vocabularies for the wizard."""
+    return {"skills": SKILL_OPTIONS, "experience": EXPERIENCE_OPTIONS}
+
+
+@router.get("/onboarding", response_model=DesignerOnboardingOut)
+def get_onboarding(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DesignerOnboardingOut:
+    return _onboarding_out(_my_profile(db, user))
+
+
+@router.patch("/profile", response_model=DesignerOnboardingOut)
+def update_designer_profile(
+    payload: DesignerProfilePatch,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DesignerOnboardingOut:
+    """Save any subset of the onboarding fields (each step patches; all editable
+    later). display_name also refreshes the profile's slug is left stable."""
+    p = _my_profile(db, user)
+    data = payload.model_dump(exclude_unset=True)
+    if "display_name" in data and data["display_name"]:
+        p.display_name = data["display_name"].strip()
+    if "bio" in data:
+        p.bio = (data["bio"] or "").strip() or None
+    if "country" in data:
+        p.country = (data["country"] or "").strip() or None
+    if "skills" in data and data["skills"] is not None:
+        p.skills = data["skills"]
+    if "experience" in data:
+        p.experience = data["experience"] or None
+    if "portfolio_links" in data and data["portfolio_links"] is not None:
+        p.portfolio_links = data["portfolio_links"]
+    for field in ("website", "behance", "dribbble", "instagram"):
+        if field in data:
+            setattr(p, field, (data[field] or "").strip() or None)
+    db.commit()
+    db.refresh(p)
+    return _onboarding_out(p)
+
+
+@router.post("/avatar", response_model=DesignerOnboardingOut)
+async def upload_designer_avatar(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DesignerOnboardingOut:
+    p = _my_profile(db, user)
+    data = await file.read()
+    try:
+        url = save_image(data, file.content_type, max_px=app_settings.LOGO_MAX_PX)
+    except StorageError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    old = p.avatar_url
+    p.avatar_url = url
+    db.commit()
+    if old:
+        delete_image(old)
+    db.refresh(p)
+    return _onboarding_out(p)
+
+
+@router.post("/cover", response_model=DesignerOnboardingOut)
+async def upload_designer_cover(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DesignerOnboardingOut:
+    p = _my_profile(db, user)
+    data = await file.read()
+    try:
+        url = save_image(data, file.content_type, max_px=app_settings.COVER_MAX_PX)
+    except StorageError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    old = p.cover_url
+    p.cover_url = url
+    db.commit()
+    if old:
+        delete_image(old)
+    db.refresh(p)
+    return _onboarding_out(p)
+
+
+@router.post("/portfolio", response_model=PortfolioItemOut, status_code=status.HTTP_201_CREATED)
+async def add_portfolio_image(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> PortfolioItemOut:
+    p = _my_profile(db, user)
+    data = await file.read()
+    try:
+        url = save_image(data, file.content_type, max_px=app_settings.COVER_MAX_PX)
+    except StorageError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    item = DesignerPortfolioItem(designer_profile_id=p.id, image_url=url)
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return PortfolioItemOut(id=item.id, image_url=item.image_url)
+
+
+@router.delete("/portfolio/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_portfolio_image(
+    item_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    p = _my_profile(db, user)
+    item = db.get(DesignerPortfolioItem, item_id)
+    if item is None or item.designer_profile_id != p.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio item not found.")
+    url = item.image_url
+    db.delete(item)
+    db.commit()
+    delete_image(url)
+
+
+@router.post("/onboarding/complete", response_model=DesignerOnboardingOut)
+def complete_onboarding(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DesignerOnboardingOut:
+    p = _my_profile(db, user)
+    if p.onboarding_completed_at is None:
+        p.onboarding_completed_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(p)
+    return _onboarding_out(p)
+
+
 # ── public profile (portfolio + reviews) ─────────────────────────────────────────
 
 class ReviewOut(BaseModel):
@@ -99,6 +332,15 @@ class DesignerPublicProfile(BaseModel):
     bio: str | None
     avatar_url: str | None
     cover_url: str | None
+    country: str | None
+    experience: str | None
+    skills: list[str]
+    portfolio_links: list[str]
+    website: str | None
+    behance: str | None
+    dribbble: str | None
+    instagram: str | None
+    member_since: datetime
     rating_avg: float | None
     rating_count: int
     completed_jobs: int
@@ -111,7 +353,6 @@ class DesignerPublicProfile(BaseModel):
 def designer_profile(
     slug: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
 ) -> DesignerPublicProfile:
     p = db.scalar(select(DesignerProfile).where(DesignerProfile.slug == slug))
     if p is None:

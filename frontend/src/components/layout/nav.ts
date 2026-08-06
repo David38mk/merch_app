@@ -9,6 +9,7 @@ import {
   Shirt,
   ShoppingBag,
   Store,
+  UserRound,
   Users,
   Wand2,
 } from "lucide-react";
@@ -48,6 +49,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/designer", label: "Job calls", icon: Palette, end: true },
       { to: "/designer/collabs", label: "Collaborations", icon: MessagesSquare },
+      { to: "/designer/onboarding", label: "My profile", icon: UserRound },
     ],
   },
   {
