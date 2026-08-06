@@ -32,6 +32,8 @@ class User(UUIDMixin, TimestampMixin, Base):
     auth_provider: Mapped[str | None] = mapped_column(String, nullable=True)
     # "Log out of all devices": access tokens issued before this moment are dead.
     sessions_revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Set on a Delete Account request — login blocked, all tokens dead, PII wiped.
+    deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # When the user accepted Terms & Privacy. Null for guest (passwordless) accounts
     # created at checkout — they never went through signup.
     accepted_terms_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

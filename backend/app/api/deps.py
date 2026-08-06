@@ -34,6 +34,9 @@ def _resolve_user(token: str, db: Session) -> User | None:
     user = db.get(User, user_id)
     if user is None:
         return None
+    # A deleted (deactivated) account is dead for every token, immediately.
+    if user.deactivated_at is not None:
+        return None
     # "Log out of all devices": tokens issued before the revocation cut are dead.
     # A token with no iat (pre-upgrade) is also dead once a cut exists — safe side.
     if user.sessions_revoked_at is not None:

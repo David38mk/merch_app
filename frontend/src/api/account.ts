@@ -72,6 +72,12 @@ export async function updatePreferences(patch: {
   return (await api.patch<Account>("/settings/preferences", patch)).data;
 }
 
+/** Delete Account request — soft-delete + anonymize. Verified by password, or a
+ * typed "DELETE" confirmation for passwordless (Google) accounts. */
+export async function deleteAccount(payload: { password?: string; confirm?: string }): Promise<void> {
+  await api.post("/settings/delete", payload);
+}
+
 // ── saved addresses ───────────────────────────────────────────────────────────
 
 export type AddressType = "SHIPPING" | "BILLING";

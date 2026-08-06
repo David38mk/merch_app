@@ -2,23 +2,26 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Building2,
   Check,
+  Download,
   ExternalLink,
   KeyRound,
   Loader2,
   LogOut,
   Mail,
   Monitor,
+  ShieldAlert,
   Store,
   Trash2,
   Upload,
   UserRound,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import {
   changeEmail,
   changePassword,
+  deleteAccount,
   getAccount,
   logoutEverywhere,
   removeAvatar,
@@ -335,6 +338,29 @@ export default function Settings() {
             )}
           </div>
         </Card>
+
+        {/* ── Privacy ──────────────────────────────────────────── */}
+        <Card className="p-6">
+          <SectionTitle icon={ShieldAlert} title="Privacy" />
+
+          <div className="mt-4">
+            <h3 className="text-sm font-semibold text-slate-800">Your data</h3>
+            <p className="mt-1 text-sm text-slate-500">Download a copy of your account data and order history.</p>
+            <Button variant="outline" size="sm" className="mt-2" disabled>
+              <Download className="h-4 w-4" /> Download my data
+              <span className="ml-1 text-xs text-slate-400">(coming soon)</span>
+            </Button>
+          </div>
+
+          <div className="mt-6 rounded-xl border border-red-200 bg-red-50/50 p-4">
+            <h3 className="text-sm font-semibold text-red-800">Delete account</h3>
+            <p className="mt-1 text-sm text-red-700/80">
+              Permanently closes your account and removes your personal data. Your past orders stay on record for the
+              sellers you bought from, anonymized. This can't be undone.
+            </p>
+            <DeleteAccountButton hasPassword={acc.security.has_password} />
+          </div>
+        </Card>
       </div>
     </div>
   );
@@ -495,6 +521,96 @@ function ChangeEmailButton({
         </div>
       )}
     </>
+  );
+}
+
+function DeleteAccountButton({ hasPassword }: { hasPassword: boolean }) {
+  const { logout } = useAuth();
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const mut = useMutation({
+    mutationFn: () => deleteAccount(hasPassword ? { password } : { confirm }),
+    onSuccess: () => {
+      // Token is already dead server-side — clear it locally and leave.
+      logout();
+      navigate("/", { replace: true });
+    },
+    onError: (e) => setError(apiError(e, "Couldn't delete your account.")),
+  });
+
+  const ready = hasPassword ? password.length > 0 : confirm.trim().toUpperCase() === "DELETE";
+
+  if (!open) {
+    return (
+      <Button variant="outline" size="sm" className="mt-3 border-red-300 text-red-700 hover:bg-red-100" onClick={() => setOpen(true)}>
+        <Trash2 className="h-4 w-4" /> Delete my account
+      </Button>
+    );
+  }
+
+  return (
+    <div className="mt-3 space-y-3">
+      {hasPassword ? (
+        <div>
+          <label className="label">Confirm your password</label>
+          <input
+            type="password"
+            className="input"
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              setError(null);
+            }}
+            placeholder="Current password"
+            autoFocus
+          />
+        </div>
+      ) : (
+        <div>
+          <label className="label">
+            Type <span className="font-mono font-semibold">DELETE</span> to confirm
+          </label>
+          <input
+            className="input"
+            value={confirm}
+            onChange={(e) => {
+              setConfirm(e.target.value);
+              setError(null);
+            }}
+            placeholder="DELETE"
+            autoFocus
+          />
+        </div>
+      )}
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      <div className="flex gap-2">
+        <Button
+          size="sm"
+          className="bg-red-600 hover:bg-red-700"
+          onClick={() => ready && mut.mutate()}
+          disabled={!ready || mut.isPending}
+        >
+          {mut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+          Permanently delete
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            setOpen(false);
+            setPassword("");
+            setConfirm("");
+            setError(null);
+          }}
+        >
+          Cancel
+        </Button>
+      </div>
+    </div>
   );
 }
 

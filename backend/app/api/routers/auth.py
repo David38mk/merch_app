@@ -154,6 +154,8 @@ def login(
     user = _find_by_email(db, form.username)
     if not user or not verify_password(form.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password.")
+    if user.deactivated_at is not None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account has been closed.")
     if settings.EMAIL_VERIFICATION_ENABLED and not _is_verified(user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Please verify your email first.")
     return Token(access_token=create_access_token(str(user.id), remember=remember))
@@ -181,6 +183,8 @@ def google_login(payload: GoogleAuthRequest, db: Session = Depends(get_db)) -> T
 
     email = info["email"]
     user = _find_by_email(db, email)
+    if user is not None and user.deactivated_at is not None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account has been closed.")
     if user is None:
         first = info.get("given_name") or (info.get("name") or email).split(" ")[0]
         last = info.get("family_name") or ""

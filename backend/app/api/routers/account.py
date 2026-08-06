@@ -26,6 +26,7 @@ from app.core.security import (
     validate_password_strength,
     verify_password,
 )
+from app.models.commerce import ProductReview
 from app.models.enums import AddressType
 from app.models.user import Address, SellerProfile, Settings, User
 from app.seams.delivery import send_verification
@@ -338,6 +339,54 @@ def logout_everywhere(
     user.sessions_revoked_at = datetime.now(timezone.utc)
     db.commit()
     return TokenOut(access_token=create_access_token(str(user.id)))
+
+
+class DeleteAccountIn(BaseModel):
+    password: str | None = None
+    confirm: str | None = None  # typed phrase — required for passwordless (Google) accounts
+
+
+@router.post("/delete", status_code=status.HTTP_204_NO_CONTENT)
+def delete_account(
+    payload: DeleteAccountIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    """Delete Account request (soft delete). Sensitive → verified by password
+    (or a typed 'DELETE' for Google-only accounts). Deactivates the account,
+    kills every session and blocks future login, and anonymizes personal data —
+    while keeping order/review rows (their reviewer name is anonymized) so
+    sellers' sales records and product ratings stay intact."""
+    if user.password_hash:
+        if not payload.password or not verify_password(payload.password, user.password_hash):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Your password is incorrect.")
+    elif (payload.confirm or "").strip().upper() != "DELETE":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Type "DELETE" to confirm.')
+
+    now = datetime.now(timezone.utc)
+    old_avatar = user.avatar_url
+    user.deactivated_at = now
+    user.sessions_revoked_at = now  # every token is dead immediately
+    user.first_name = ""
+    user.last_name = ""
+    user.display_name = "Deleted user"
+    user.phone = None
+    user.avatar_url = None
+
+    # Drop PII that isn't needed for anyone else's records.
+    for addr in db.scalars(select(Address).where(Address.user_id == user.id)).all():
+        db.delete(addr)
+    s = db.scalar(select(Settings).where(Settings.user_id == user.id))
+    if s is not None:
+        s.receive_newsletters = False
+        s.notifications_enabled = False
+    # Public-facing review authorship is anonymized (the rating itself stays).
+    for rv in db.scalars(select(ProductReview).where(ProductReview.buyer_user_id == user.id)).all():
+        rv.reviewer_name = "Deleted user"
+
+    db.commit()
+    if old_avatar:
+        delete_image(old_avatar)
 
 
 # ── saved addresses ───────────────────────────────────────────────────────────
