@@ -17,7 +17,14 @@ from app.core.designer_stats import completed_counts, rating_stats, response_hou
 from app.models.design import Design
 from app.models.enums import Role
 from app.models.hiring import DesignerReview
-from app.models.user import DesignerPortfolioItem, DesignerProfile, User, UserRole
+from app.models.user import (
+    DesignerPortfolioItem,
+    DesignerProfile,
+    DesignerProject,
+    DesignerProjectImage,
+    User,
+    UserRole,
+)
 from app.seams.storage import StorageError, delete_image, save_image
 
 # The fixed onboarding vocabularies (also used to validate patches).
@@ -308,6 +315,251 @@ def complete_onboarding(
     return _onboarding_out(p)
 
 
+# ── portfolio projects ───────────────────────────────────────────────────────
+
+MAX_PROJECT_IMAGES = 12
+
+
+class ProjectImageOut(BaseModel):
+    id: uuid.UUID
+    image_url: str
+    position: int
+
+
+class ProjectOut(BaseModel):
+    id: uuid.UUID
+    title: str
+    description: str | None
+    categories: list[str]
+    featured: bool
+    published: bool
+    created_at: datetime
+    cover_url: str | None
+    images: list[ProjectImageOut]
+
+
+class ProjectCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=2000)
+    categories: list[str] = Field(default_factory=list)
+
+    @field_validator("categories")
+    @classmethod
+    def _valid_categories(cls, v: list[str]) -> list[str]:
+        bad = [c for c in v if c not in SKILL_OPTIONS]
+        if bad:
+            raise ValueError(f"Unknown categories: {', '.join(bad)}")
+        return v
+
+
+class ProjectPatch(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=2000)
+    categories: list[str] | None = None
+    featured: bool | None = None
+
+    @field_validator("categories")
+    @classmethod
+    def _valid_categories(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return v
+        bad = [c for c in v if c not in SKILL_OPTIONS]
+        if bad:
+            raise ValueError(f"Unknown categories: {', '.join(bad)}")
+        return v
+
+
+class ReorderIn(BaseModel):
+    image_ids: list[uuid.UUID]
+
+
+def _project_out(pr: DesignerProject) -> ProjectOut:
+    imgs = sorted(pr.images, key=lambda i: i.position)
+    return ProjectOut(
+        id=pr.id,
+        title=pr.title,
+        description=pr.description,
+        categories=list(pr.categories or []),
+        featured=pr.featured,
+        published=pr.published,
+        created_at=pr.created_at,
+        cover_url=imgs[0].image_url if imgs else None,
+        images=[ProjectImageOut(id=i.id, image_url=i.image_url, position=i.position) for i in imgs],
+    )
+
+
+def _my_project(db: Session, user: User, project_id: uuid.UUID) -> DesignerProject:
+    p = _my_profile(db, user)
+    pr = db.get(DesignerProject, project_id)
+    if pr is None or pr.designer_profile_id != p.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+    return pr
+
+
+@router.get("/projects", response_model=list[ProjectOut])
+def list_projects(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[ProjectOut]:
+    """The designer's own projects — drafts included (dashboard view). Featured
+    first, then newest."""
+    p = _my_profile(db, user)
+    rows = db.scalars(
+        select(DesignerProject)
+        .where(DesignerProject.designer_profile_id == p.id)
+        .order_by(DesignerProject.featured.desc(), DesignerProject.created_at.desc())
+    ).all()
+    return [_project_out(pr) for pr in rows]
+
+
+@router.post("/projects", response_model=ProjectOut, status_code=status.HTTP_201_CREATED)
+def create_project(
+    payload: ProjectCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ProjectOut:
+    """Create a project as a DRAFT — images are uploaded next, then Publish makes
+    it visible to sellers."""
+    p = _my_profile(db, user)
+    pr = DesignerProject(
+        designer_profile_id=p.id,
+        title=payload.title.strip(),
+        description=(payload.description or "").strip() or None,
+        categories=payload.categories,
+    )
+    db.add(pr)
+    db.commit()
+    db.refresh(pr)
+    return _project_out(pr)
+
+
+@router.patch("/projects/{project_id}", response_model=ProjectOut)
+def update_project(
+    project_id: uuid.UUID,
+    payload: ProjectPatch,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ProjectOut:
+    """Edit any subset of a project's fields (all editable at any time)."""
+    pr = _my_project(db, user, project_id)
+    data = payload.model_dump(exclude_unset=True)
+    if "title" in data and data["title"]:
+        pr.title = data["title"].strip()
+    if "description" in data:
+        pr.description = (data["description"] or "").strip() or None
+    if "categories" in data and data["categories"] is not None:
+        pr.categories = data["categories"]
+    if "featured" in data and data["featured"] is not None:
+        pr.featured = data["featured"]
+    db.commit()
+    db.refresh(pr)
+    return _project_out(pr)
+
+
+@router.post("/projects/{project_id}/publish", response_model=ProjectOut)
+def set_project_published(
+    project_id: uuid.UUID,
+    published: bool = True,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ProjectOut:
+    """Publish (or unpublish) a project. A project needs at least one image to go
+    public — sellers judge on the work, so an image-less project stays a draft."""
+    pr = _my_project(db, user, project_id)
+    if published and not pr.images:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Add at least one image before publishing.")
+    pr.published = published
+    db.commit()
+    db.refresh(pr)
+    return _project_out(pr)
+
+
+@router.delete("/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_project(
+    project_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    pr = _my_project(db, user, project_id)
+    urls = [i.image_url for i in pr.images]
+    db.delete(pr)
+    db.commit()
+    for url in urls:
+        delete_image(url)
+
+
+@router.post("/projects/{project_id}/images", response_model=ProjectOut, status_code=status.HTTP_201_CREATED)
+async def add_project_image(
+    project_id: uuid.UUID,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ProjectOut:
+    """Append an image to a project (first one becomes the cover)."""
+    pr = _my_project(db, user, project_id)
+    if len(pr.images) >= MAX_PROJECT_IMAGES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"At most {MAX_PROJECT_IMAGES} images per project.")
+    data = await file.read()
+    try:
+        url = save_image(data, file.content_type, max_px=app_settings.DESIGN_MAX_PX)
+    except StorageError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    next_pos = max((i.position for i in pr.images), default=-1) + 1
+    db.add(DesignerProjectImage(project_id=pr.id, image_url=url, position=next_pos))
+    db.commit()
+    db.refresh(pr)
+    return _project_out(pr)
+
+
+@router.delete("/projects/{project_id}/images/{image_id}", response_model=ProjectOut)
+def delete_project_image(
+    project_id: uuid.UUID,
+    image_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ProjectOut:
+    """Remove an image. If the last image goes, the project is auto-unpublished
+    (it can't be public without work to show)."""
+    pr = _my_project(db, user, project_id)
+    img = db.get(DesignerProjectImage, image_id)
+    if img is None or img.project_id != pr.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found.")
+    url = img.image_url
+    db.delete(img)
+    db.flush()
+    remaining = [i for i in pr.images if i.id != image_id]
+    # Compact positions so the cover stays position 0.
+    for pos, i in enumerate(sorted(remaining, key=lambda x: x.position)):
+        i.position = pos
+    if not remaining:
+        pr.published = False
+    db.commit()
+    db.refresh(pr)
+    delete_image(url)
+    return _project_out(pr)
+
+
+@router.post("/projects/{project_id}/reorder", response_model=ProjectOut)
+def reorder_project_images(
+    project_id: uuid.UUID,
+    payload: ReorderIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ProjectOut:
+    """Set image order (image_ids in the desired order). The first id becomes the
+    cover. Ids not belonging to the project are ignored; omitted images sink to
+    the end in their current order."""
+    pr = _my_project(db, user, project_id)
+    by_id = {i.id: i for i in pr.images}
+    order = [iid for iid in payload.image_ids if iid in by_id]
+    ranked = order + [i.id for i in sorted(pr.images, key=lambda x: x.position) if i.id not in order]
+    for pos, iid in enumerate(ranked):
+        by_id[iid].position = pos
+    db.commit()
+    db.refresh(pr)
+    return _project_out(pr)
+
+
 # ── public profile (portfolio + reviews) ─────────────────────────────────────────
 
 class ReviewOut(BaseModel):
@@ -346,6 +598,7 @@ class DesignerPublicProfile(BaseModel):
     completed_jobs: int
     response_hours: float | None
     reviews: list[ReviewOut]
+    projects: list[ProjectOut]
     portfolio: list[PortfolioPiece]
 
 
@@ -370,6 +623,15 @@ def designer_profile(
     designs = db.scalars(
         select(Design).where(Design.owner_user_id == p.user_id).order_by(Design.created_at.desc()).limit(12)
     ).all()
+
+    # Published projects only — featured first, then newest (drafts stay private).
+    projects = [
+        _project_out(pr)
+        for pr in sorted(
+            (x for x in p.projects if x.published),
+            key=lambda x: (not x.featured, -x.created_at.timestamp()),
+        )
+    ]
 
     # Portfolio = the designer's uploaded showcase images first, then their Designs.
     portfolio = [
@@ -410,5 +672,6 @@ def designer_profile(
             )
             for r in reviews
         ],
+        projects=projects,
         portfolio=portfolio,
     )

@@ -32,6 +32,24 @@ export interface PortfolioPiece {
   created_at: string;
 }
 
+export interface PublicProjectImage {
+  id: string;
+  image_url: string;
+  position: number;
+}
+
+export interface PublicProject {
+  id: string;
+  title: string;
+  description: string | null;
+  categories: string[];
+  featured: boolean;
+  published: boolean;
+  created_at: string;
+  cover_url: string | null;
+  images: PublicProjectImage[];
+}
+
 export interface DesignerPublicProfile {
   id: string;
   slug: string;
@@ -53,6 +71,7 @@ export interface DesignerPublicProfile {
   completed_jobs: number;
   response_hours: number | null;
   reviews: DesignerReview[];
+  projects: PublicProject[];
   portfolio: PortfolioPiece[];
 }
 

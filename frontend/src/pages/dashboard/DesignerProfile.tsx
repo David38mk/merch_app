@@ -6,12 +6,14 @@ import {
   Clock,
   Dribbble,
   Globe,
+  Images,
   Instagram,
   Loader2,
   MapPin,
   MessagesSquare,
   Palette,
   Pencil,
+  Star,
 } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
@@ -168,6 +170,50 @@ export default function DesignerProfile() {
             )}
           </div>
         </Card>
+
+        {/* Projects — the designer's showcase, sellers' main hiring signal */}
+        {d.projects.length > 0 && (
+          <div className="mt-6">
+            <h2 className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900">
+              <Images className="h-5 w-5 text-brand-600" /> Projects
+            </h2>
+            <div className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {d.projects.map((pr) => (
+                <Card key={pr.id} className="overflow-hidden">
+                  <div className="relative aspect-[4/3] bg-slate-100">
+                    {pr.cover_url && <img src={pr.cover_url} alt="" loading="lazy" className="h-full w-full object-cover" />}
+                    {pr.featured && (
+                      <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+                        <Star className="h-3 w-3 fill-current" /> Featured
+                      </span>
+                    )}
+                    {pr.images.length > 1 && (
+                      <span className="absolute bottom-2 right-2 rounded bg-slate-900/70 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                        {pr.images.length} images
+                      </span>
+                    )}
+                  </div>
+                  <div className="p-4">
+                    <h3 className="truncate font-semibold text-slate-900">{pr.title}</h3>
+                    <p className="mt-0.5 text-xs text-slate-400">
+                      {new Date(pr.created_at).toLocaleDateString(undefined, { year: "numeric", month: "short" })}
+                    </p>
+                    {pr.description && <p className="mt-2 line-clamp-2 text-sm text-slate-600">{pr.description}</p>}
+                    {pr.categories.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {pr.categories.map((c) => (
+                          <span key={c} className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                            {c}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="mt-6 grid gap-6 lg:grid-cols-3">
           {/* Portfolio */}

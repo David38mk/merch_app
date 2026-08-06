@@ -4,6 +4,7 @@ import {
   LayoutGrid,
   LucideIcon,
   MessagesSquare,
+  Images,
   Package,
   Palette,
   Shirt,
@@ -48,6 +49,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Designer",
     items: [
       { to: "/designer", label: "Job calls", icon: Palette, end: true },
+      { to: "/designer/portfolio", label: "Portfolio", icon: Images },
       { to: "/designer/collabs", label: "Collaborations", icon: MessagesSquare },
       { to: "/designer/onboarding", label: "My profile", icon: UserRound },
     ],

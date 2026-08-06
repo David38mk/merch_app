@@ -143,6 +143,10 @@ class DesignerProfile(UUIDMixin, TimestampMixin, Base):
     portfolio_items: Mapped[list["DesignerPortfolioItem"]] = relationship(
         back_populates="designer", cascade="all, delete-orphan", order_by="DesignerPortfolioItem.created_at"
     )
+    projects: Mapped[list["DesignerProject"]] = relationship(
+        back_populates="designer", cascade="all, delete-orphan",
+        order_by="DesignerProject.featured.desc(), DesignerProject.created_at.desc()",
+    )
 
 
 class DesignerPortfolioItem(UUIDMixin, TimestampMixin, Base):
@@ -157,6 +161,45 @@ class DesignerPortfolioItem(UUIDMixin, TimestampMixin, Base):
     image_url: Mapped[str] = mapped_column(String)
 
     designer: Mapped["DesignerProfile"] = relationship(back_populates="portfolio_items")
+
+
+class DesignerProject(UUIDMixin, TimestampMixin, Base):
+    """A portfolio project — the rich showcase unit sellers judge when hiring.
+    Holds a title/description, categories (from the shared skills taxonomy) and
+    an ordered set of images (first = cover). Saved as a draft; an explicit
+    Publish flips `published` so it shows on the public profile."""
+
+    __tablename__ = "designer_projects"
+
+    designer_profile_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("designer_profiles.id", ondelete="CASCADE"), index=True
+    )
+    title: Mapped[str] = mapped_column(String)
+    description: Mapped[str | None] = mapped_column(String, nullable=True)
+    categories: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")
+    featured: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    published: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
+    designer: Mapped["DesignerProfile"] = relationship(back_populates="projects")
+    images: Mapped[list["DesignerProjectImage"]] = relationship(
+        back_populates="project", cascade="all, delete-orphan",
+        order_by="DesignerProjectImage.position",
+    )
+
+
+class DesignerProjectImage(UUIDMixin, TimestampMixin, Base):
+    """An image inside a project (🔌 storage seam). `position` drives order and
+    picks the cover (position 0)."""
+
+    __tablename__ = "designer_project_images"
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("designer_projects.id", ondelete="CASCADE"), index=True
+    )
+    image_url: Mapped[str] = mapped_column(String)
+    position: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+    project: Mapped["DesignerProject"] = relationship(back_populates="images")
 
 
 class PrintShopProfile(UUIDMixin, TimestampMixin, Base):

@@ -77,3 +77,70 @@ export async function removePortfolioImage(id: string): Promise<void> {
 export async function completeOnboarding(): Promise<DesignerOnboarding> {
   return (await api.post<DesignerOnboarding>("/designer/onboarding/complete")).data;
 }
+
+// ── portfolio projects ────────────────────────────────────────────────────────
+
+export interface ProjectImage {
+  id: string;
+  image_url: string;
+  position: number;
+}
+
+export interface DesignerProject {
+  id: string;
+  title: string;
+  description: string | null;
+  categories: string[];
+  featured: boolean;
+  published: boolean;
+  created_at: string;
+  cover_url: string | null;
+  images: ProjectImage[];
+}
+
+export interface ProjectInput {
+  title: string;
+  description?: string | null;
+  categories?: string[];
+}
+
+export interface ProjectPatch {
+  title?: string;
+  description?: string | null;
+  categories?: string[];
+  featured?: boolean;
+}
+
+export async function getProjects(): Promise<DesignerProject[]> {
+  return (await api.get<DesignerProject[]>("/designer/projects")).data;
+}
+
+export async function createProject(input: ProjectInput): Promise<DesignerProject> {
+  return (await api.post<DesignerProject>("/designer/projects", input)).data;
+}
+
+export async function updateProject(id: string, patch: ProjectPatch): Promise<DesignerProject> {
+  return (await api.patch<DesignerProject>(`/designer/projects/${id}`, patch)).data;
+}
+
+export async function setProjectPublished(id: string, published: boolean): Promise<DesignerProject> {
+  return (await api.post<DesignerProject>(`/designer/projects/${id}/publish`, null, { params: { published } })).data;
+}
+
+export async function deleteProject(id: string): Promise<void> {
+  await api.delete(`/designer/projects/${id}`);
+}
+
+export async function addProjectImage(id: string, file: File): Promise<DesignerProject> {
+  const form = new FormData();
+  form.append("file", file);
+  return (await api.post<DesignerProject>(`/designer/projects/${id}/images`, form)).data;
+}
+
+export async function deleteProjectImage(id: string, imageId: string): Promise<DesignerProject> {
+  return (await api.delete<DesignerProject>(`/designer/projects/${id}/images/${imageId}`)).data;
+}
+
+export async function reorderProjectImages(id: string, imageIds: string[]): Promise<DesignerProject> {
+  return (await api.post<DesignerProject>(`/designer/projects/${id}/reorder`, { image_ids: imageIds })).data;
+}
