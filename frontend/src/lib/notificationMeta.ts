@@ -1,10 +1,12 @@
 import {
   Bell,
   CircleDollarSign,
+  Heart,
   Megaphone,
   MessagesSquare,
   Package,
   Palette,
+  Percent,
   RotateCcw,
   ShoppingBag,
   Sparkles,
@@ -32,6 +34,8 @@ const META: Record<NotificationType, Meta> = {
   NEW_PRODUCTION_ORDER: { icon: Package, tone: "amber", group: "Orders" },
   ANNOUNCEMENT: { icon: Megaphone, tone: "slate", group: "Announcements" },
   REVIEW: { icon: Star, tone: "amber", group: "Reviews" },
+  PROMOTION: { icon: Percent, tone: "green", group: "Promotions" },
+  WISHLIST: { icon: Heart, tone: "brand", group: "Wishlist" },
   SYSTEM: { icon: Sparkles, tone: "slate", group: "System" },
 };
 
@@ -46,6 +50,9 @@ export const NOTIFICATION_GROUPS = [
   "Payments",
   "Applications",
   "Collaborations",
+  "Reviews",
+  "Promotions",
+  "Wishlist",
   "Announcements",
   "System",
 ] as const;

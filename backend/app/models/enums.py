@@ -179,6 +179,8 @@ class NotificationType(str, enum.Enum):
     NEW_PRODUCTION_ORDER = "NEW_PRODUCTION_ORDER"
     ANNOUNCEMENT = "ANNOUNCEMENT"  # platform announcements
     REVIEW = "REVIEW"  # review requests / product-review activity
+    PROMOTION = "PROMOTION"  # ⏭️ promo engine emits these (buyer-facing)
+    WISHLIST = "WISHLIST"  # ⏭️ back-in-stock / price-drop on a saved product
     SYSTEM = "SYSTEM"
 
 

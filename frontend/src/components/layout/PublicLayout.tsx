@@ -7,6 +7,7 @@ import { CartButton } from "../cart/CartButton";
 import { WishlistButton } from "../wishlist/WishlistButton";
 import { Button } from "../ui/Button";
 import { Brand } from "./Brand";
+import { NotificationsMenu } from "./NotificationsMenu";
 
 const links = [
   { to: "/", label: "Explore" },

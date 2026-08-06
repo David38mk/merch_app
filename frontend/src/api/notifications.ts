@@ -10,6 +10,8 @@ export type NotificationType =
   | "NEW_PRODUCTION_ORDER"
   | "ANNOUNCEMENT"
   | "REVIEW"
+  | "PROMOTION"
+  | "WISHLIST"
   | "SYSTEM";
 
 export interface NotificationItem {

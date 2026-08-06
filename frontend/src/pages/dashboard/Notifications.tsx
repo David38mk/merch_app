@@ -15,7 +15,7 @@ import { Card } from "../../components/ui/Card";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { cn } from "../../lib/cn";
-import { NOTIFICATION_GROUPS, notificationMeta } from "../../lib/notificationMeta";
+import { notificationMeta } from "../../lib/notificationMeta";
 import { timeAgo } from "../../lib/timeAgo";
 
 /** "Grouped by date" — the buckets a person actually thinks in. */
@@ -36,13 +36,19 @@ const BUCKET_ORDER = ["Today", "Yesterday", "This week", "This month", "Earlier"
 export default function Notifications() {
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const [group, setGroup] = useState<(typeof NOTIFICATION_GROUPS)[number]>("All");
+  const [group, setGroup] = useState<string>("All");
 
   const { data, isLoading } = useQuery({
     queryKey: ["notifications-page"],
     queryFn: () => getNotifications(100),
     refetchInterval: 45_000,
   });
+
+  // Show only the categories the user actually has (buyers ≠ sellers).
+  const groups = useMemo(() => {
+    const present = new Set((data?.items ?? []).map((n) => notificationMeta(n.type).group));
+    return ["All", ...Array.from(present)];
+  }, [data]);
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["notifications-page"] });
@@ -84,7 +90,7 @@ export default function Notifications() {
 
       {/* Category filter */}
       <div className="mb-5 flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1 sm:inline-flex">
-        {NOTIFICATION_GROUPS.map((g) => (
+        {groups.map((g) => (
           <button
             key={g}
             onClick={() => setGroup(g)}
