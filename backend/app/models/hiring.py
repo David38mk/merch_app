@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, Integer, Numeric, String
+from sqlalchemy import Column, DateTime, Enum as SAEnum, ForeignKey, Integer, Numeric, String, Table, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -59,8 +59,18 @@ class CallAttachment(UUIDMixin, TimestampMixin, Base):
     call: Mapped["DesignerCall"] = relationship(back_populates="attachments")
 
 
+# Portfolio projects a designer attaches to an application (many-to-many).
+bid_projects = Table(
+    "bid_projects",
+    Base.metadata,
+    Column("bid_id", ForeignKey("bids.id", ondelete="CASCADE"), primary_key=True),
+    Column("project_id", ForeignKey("designer_projects.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
 class Bid(UUIDMixin, TimestampMixin, Base):
-    """A Designer's price offer on a DesignerCall."""
+    """A Designer's application to a DesignerCall — a short intro, a cover
+    message, an optional compensation offer, and selected portfolio projects."""
 
     __tablename__ = "bids"
 
@@ -68,11 +78,13 @@ class Bid(UUIDMixin, TimestampMixin, Base):
     designer_profile_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("designer_profiles.id", ondelete="CASCADE"))
     price_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    message: Mapped[str] = mapped_column(String)
+    intro: Mapped[str | None] = mapped_column(String, nullable=True)  # one-line headline
+    message: Mapped[str] = mapped_column(String)  # full cover message
     status: Mapped[BidStatus] = mapped_column(SAEnum(BidStatus), default=BidStatus.PENDING)
 
     call: Mapped["DesignerCall"] = relationship(back_populates="bids")
     designer: Mapped["DesignerProfile"] = relationship(back_populates="bids")  # noqa: F821
+    projects: Mapped[list["DesignerProject"]] = relationship(secondary=bid_projects)  # noqa: F821
 
 
 class Collaboration(UUIDMixin, TimestampMixin, Base):

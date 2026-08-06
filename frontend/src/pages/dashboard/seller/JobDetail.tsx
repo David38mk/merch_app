@@ -197,7 +197,27 @@ export default function JobDetail() {
                           </div>
 
                           {b.designer.bio && <p className="mt-1 text-xs text-slate-400">{b.designer.bio}</p>}
-                          <p className="mt-2 text-sm text-slate-600">{b.message}</p>
+                          {b.intro && <p className="mt-2 text-sm font-medium text-slate-800">“{b.intro}”</p>}
+                          <p className="mt-1 text-sm text-slate-600">{b.message}</p>
+
+                          {/* Portfolio the designer selected for this job */}
+                          {b.projects.length > 0 && (
+                            <div className="mt-3">
+                              <p className="text-xs font-medium text-slate-500">Selected work for this job</p>
+                              <div className="mt-1.5 flex flex-wrap gap-2">
+                                {b.projects.map((p) => (
+                                  <div key={p.id} className="w-16">
+                                    <div className="aspect-square overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                                      {p.cover_url && <img src={p.cover_url} alt="" className="h-full w-full object-cover" />}
+                                    </div>
+                                    <p className="mt-0.5 truncate text-[10px] text-slate-500" title={p.title}>
+                                      {p.title}
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
 
                           {/* Previous work */}
                           {b.designer.portfolio_preview.length > 0 && (

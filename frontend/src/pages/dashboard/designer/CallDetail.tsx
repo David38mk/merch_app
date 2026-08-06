@@ -1,39 +1,22 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, CalendarDays, Check, Loader2, Paperclip, Send } from "lucide-react";
+import { ArrowLeft, CalendarDays, Check, Loader2, Paperclip, Send, Store } from "lucide-react";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
-import { getCall, submitBid } from "../../../api/hiring";
+import { getCall, submitBid, type DesignerCall } from "../../../api/hiring";
+import { getProjects, type DesignerProject } from "../../../api/designer";
 import { Badge } from "../../../components/ui/Badge";
 import { Button } from "../../../components/ui/Button";
 import { Card } from "../../../components/ui/Card";
 import { apiError } from "../../../lib/apiError";
+import { cn } from "../../../lib/cn";
 import { payLabel } from "../seller/SellerHiring";
+
+const MAX_BID_PROJECTS = 6;
 
 export default function CallDetail() {
   const { id = "" } = useParams();
-  const qc = useQueryClient();
   const { data: call, isLoading, isError } = useQuery({ queryKey: ["call", id], queryFn: () => getCall(id) });
-
-  const [price, setPrice] = useState<number | "">("");
-  const [percent, setPercent] = useState<number | "">("");
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  const apply = useMutation({
-    mutationFn: () =>
-      submitBid(id, {
-        price_amount: price === "" ? null : Number(price),
-        percent: percent === "" ? null : Number(percent),
-        message: message.trim(),
-      }),
-    onSuccess: () => {
-      setError(null);
-      qc.invalidateQueries({ queryKey: ["call", id] });
-      qc.invalidateQueries({ queryKey: ["marketplace"] });
-    },
-    onError: (e) => setError(apiError(e, "Couldn't submit your application.")),
-  });
 
   if (isLoading) {
     return (
@@ -50,7 +33,7 @@ export default function CallDetail() {
         <p className="mt-2 text-sm text-slate-500">It may have been unpublished or removed.</p>
         <Link to="/designer" className="mt-6 inline-block">
           <Button variant="outline" size="sm">
-            Back to job calls
+            Back to jobs
           </Button>
         </Link>
       </div>
@@ -63,7 +46,7 @@ export default function CallDetail() {
   return (
     <div>
       <Link to="/designer" className="mb-4 inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800">
-        <ArrowLeft className="h-4 w-4" /> Back to job calls
+        <ArrowLeft className="h-4 w-4" /> Back to jobs
       </Link>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -75,6 +58,7 @@ export default function CallDetail() {
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               <Badge tone="brand">{payLabel(call)}</Badge>
+              {call.base_category && <Badge tone="slate">{call.base_category}</Badge>}
               {call.design_style && <Badge tone="slate">{call.design_style}</Badge>}
             </div>
 
@@ -89,10 +73,34 @@ export default function CallDetail() {
             )}
           </Card>
 
+          {/* Brand information */}
+          {call.seller_brand && (
+            <Card className="flex items-center gap-4 p-5">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                {call.seller_logo ? (
+                  <img src={call.seller_logo} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <Store className="h-5 w-5 text-slate-400" />
+                )}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Brand</p>
+                <p className="truncate font-medium text-slate-900">{call.seller_brand}</p>
+              </div>
+              {call.seller_slug && (
+                <Link to={`/store/${call.seller_slug}`}>
+                  <Button variant="outline" size="sm">
+                    <Store className="h-4 w-4" /> View store
+                  </Button>
+                </Link>
+              )}
+            </Card>
+          )}
+
           {(refs.length > 0 || brand.length > 0) && (
             <Card className="p-6">
-              <h2 className="font-semibold text-slate-900">Attachments</h2>
-              {refs.length > 0 && (
+              <h2 className="font-semibold text-slate-900">Reference images</h2>
+              {refs.length > 0 ? (
                 <div className="mt-3 flex flex-wrap gap-3">
                   {refs.map((a) => (
                     <a key={a.id} href={a.url} target="_blank" rel="noreferrer">
@@ -100,6 +108,8 @@ export default function CallDetail() {
                     </a>
                   ))}
                 </div>
+              ) : (
+                <p className="mt-2 text-sm text-slate-400">No reference images.</p>
               )}
               {brand.length > 0 && (
                 <div className="mt-4 space-y-1.5">
@@ -121,7 +131,7 @@ export default function CallDetail() {
         </div>
 
         {/* Product + apply */}
-        <div>
+        <div className="space-y-5">
           <Card className="overflow-hidden">
             <div className="aspect-square bg-slate-100">
               {call.base_image_url && <img src={call.base_image_url} alt="" className="h-full w-full object-cover" />}
@@ -133,7 +143,7 @@ export default function CallDetail() {
 
               <dl className="mt-4 space-y-1.5 text-sm">
                 <div className="flex justify-between">
-                  <dt className="text-slate-500">Compensation</dt>
+                  <dt className="text-slate-500">Payment model</dt>
                   <dd className="font-medium text-slate-800">{payLabel(call)}</dd>
                 </div>
                 {call.deadline && (
@@ -152,71 +162,179 @@ export default function CallDetail() {
                   </div>
                 )}
                 <div className="flex justify-between">
-                  <dt className="text-slate-500">Bids so far</dt>
+                  <dt className="text-slate-500">Applicants</dt>
                   <dd className="font-medium text-slate-800">{call.bids_count}</dd>
                 </div>
               </dl>
-
-              {/* Apply */}
-              <div className="mt-5 border-t border-slate-100 pt-4">
-                {call.has_applied && !apply.isPending ? (
-                  <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                    <Check className="h-4 w-4" /> Application submitted — you can revise it below.
-                  </div>
-                ) : (
-                  <p className="text-sm font-medium text-slate-700">Submit your application</p>
-                )}
-
-                <div className="mt-3 space-y-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="label text-xs">Your price (€)</label>
-                      <input
-                        type="number"
-                        min={0}
-                        className="input"
-                        value={price}
-                        onChange={(e) => setPrice(e.target.value === "" ? "" : Number(e.target.value))}
-                        placeholder="180"
-                      />
-                    </div>
-                    <div>
-                      <label className="label text-xs">Revenue %</label>
-                      <input
-                        type="number"
-                        min={0}
-                        max={50}
-                        className="input"
-                        value={percent}
-                        onChange={(e) => setPercent(e.target.value === "" ? "" : Number(e.target.value))}
-                        placeholder="8"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="label text-xs">Message</label>
-                    <textarea
-                      className="input min-h-20 resize-y"
-                      value={message}
-                      onChange={(e) => setMessage(e.target.value)}
-                      placeholder="Why you're a great fit, links to relevant work…"
-                    />
-                  </div>
-                  {error && <p className="text-sm text-red-600">{error}</p>}
-                  <Button
-                    className="w-full"
-                    onClick={() => apply.mutate()}
-                    disabled={apply.isPending || !message.trim()}
-                  >
-                    {apply.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                    {call.has_applied ? "Update application" : "Submit application"}
-                  </Button>
-                </div>
-              </div>
             </div>
           </Card>
+
+          <ApplyPanel call={call} />
         </div>
       </div>
     </div>
+  );
+}
+
+function ApplyPanel({ call }: { call: DesignerCall }) {
+  const qc = useQueryClient();
+  const mine = call.my_bid;
+
+  const [intro, setIntro] = useState(mine?.intro ?? "");
+  const [message, setMessage] = useState(mine?.message ?? "");
+  const [price, setPrice] = useState<number | "">(mine?.price_amount ? Number(mine.price_amount) : "");
+  const [percent, setPercent] = useState<number | "">(mine?.percent ? Number(mine.percent) : "");
+  const [selected, setSelected] = useState<Set<string>>(new Set(mine?.projects.map((p) => p.id) ?? []));
+  const [error, setError] = useState<string | null>(null);
+
+  const { data: projects } = useQuery({ queryKey: ["my-projects"], queryFn: getProjects });
+  const published = (projects ?? []).filter((p: DesignerProject) => p.published);
+
+  const showPrice = call.payment_type === "FIXED" || call.payment_type === "BOTH";
+  const showPercent = call.payment_type === "PERCENT" || call.payment_type === "BOTH";
+
+  const toggle = (pid: string) =>
+    setSelected((cur) => {
+      const next = new Set(cur);
+      if (next.has(pid)) next.delete(pid);
+      else if (next.size < MAX_BID_PROJECTS) next.add(pid);
+      return next;
+    });
+
+  const apply = useMutation({
+    mutationFn: () =>
+      submitBid(call.id, {
+        price_amount: showPrice && price !== "" ? Number(price) : null,
+        percent: showPercent && percent !== "" ? Number(percent) : null,
+        intro: intro.trim() || null,
+        message: message.trim(),
+        project_ids: [...selected],
+      }),
+    onSuccess: () => {
+      setError(null);
+      qc.invalidateQueries({ queryKey: ["call", call.id] });
+      qc.invalidateQueries({ queryKey: ["marketplace"] });
+    },
+    onError: (e) => setError(apiError(e, "Couldn't submit your application.")),
+  });
+
+  return (
+    <Card className="p-5">
+      {call.has_applied ? (
+        <div className="mb-3 flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          <Check className="h-4 w-4" /> Application submitted — you can revise it below.
+        </div>
+      ) : (
+        <p className="mb-3 font-medium text-slate-800">Apply to this job</p>
+      )}
+
+      <div className="space-y-3">
+        <div>
+          <label className="label text-xs">Short introduction</label>
+          <input
+            className="input"
+            maxLength={160}
+            value={intro}
+            onChange={(e) => setIntro(e.target.value)}
+            placeholder="One line on why you fit — e.g. “Streetwear specialist, 5y”"
+          />
+        </div>
+
+        <div>
+          <label className="label text-xs">Cover message</label>
+          <textarea
+            className="input min-h-24 resize-y"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Introduce yourself, your approach to the brief, and relevant experience…"
+          />
+        </div>
+
+        {(showPrice || showPercent) && (
+          <div className="grid grid-cols-2 gap-2">
+            {showPrice && (
+              <div>
+                <label className="label text-xs">Your price (€)</label>
+                <input
+                  type="number"
+                  min={0}
+                  className="input"
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value === "" ? "" : Number(e.target.value))}
+                  placeholder="180"
+                />
+              </div>
+            )}
+            {showPercent && (
+              <div>
+                <label className="label text-xs">Revenue %</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={50}
+                  className="input"
+                  value={percent}
+                  onChange={(e) => setPercent(e.target.value === "" ? "" : Number(e.target.value))}
+                  placeholder="8"
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Portfolio selection */}
+        <div>
+          <label className="label text-xs">
+            Attach portfolio {selected.size > 0 && <span className="text-slate-400">({selected.size}/{MAX_BID_PROJECTS})</span>}
+          </label>
+          {published.length === 0 ? (
+            <p className="mt-1 rounded-lg border border-dashed border-slate-200 px-3 py-3 text-xs text-slate-400">
+              No published projects yet.{" "}
+              <Link to="/designer/portfolio" className="font-medium text-brand-600 hover:underline">
+                Add work to your portfolio
+              </Link>{" "}
+              to showcase it here.
+            </p>
+          ) : (
+            <div className="mt-1 grid grid-cols-3 gap-2">
+              {published.map((p) => {
+                const on = selected.has(p.id);
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => toggle(p.id)}
+                    title={p.title}
+                    className={cn(
+                      "relative aspect-square overflow-hidden rounded-lg border-2 transition",
+                      on ? "border-brand-500" : "border-transparent hover:border-slate-200",
+                    )}
+                  >
+                    {p.cover_url ? (
+                      <img src={p.cover_url} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="flex h-full w-full items-center justify-center bg-slate-100 text-[10px] text-slate-400">
+                        {p.title}
+                      </span>
+                    )}
+                    {on && (
+                      <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-brand-600 text-white">
+                        <Check className="h-3 w-3" />
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <Button className="w-full" onClick={() => apply.mutate()} disabled={apply.isPending || !message.trim()}>
+          {apply.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          {call.has_applied ? "Update application" : "Submit application"}
+        </Button>
+      </div>
+    </Card>
   );
 }

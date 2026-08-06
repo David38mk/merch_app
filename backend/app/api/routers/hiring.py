@@ -26,7 +26,7 @@ from app.models.enums import (
     Role,
 )
 from app.models.hiring import Bid, CallAttachment, Collaboration, DesignerCall
-from app.models.user import DesignerProfile, SellerProfile, User
+from app.models.user import DesignerProfile, DesignerProject, SellerProfile, User
 from app.seams.storage import StorageError, copy_stored_file, delete_image, save_attachment
 
 router = APIRouter(prefix="/designer-calls", tags=["hiring"])
@@ -66,14 +66,23 @@ class DesignerBrief(BaseModel):
     portfolio_preview: list[str] = []
 
 
+class ProjectBrief(BaseModel):
+    id: uuid.UUID
+    title: str
+    cover_url: str | None
+    categories: list[str]
+
+
 class BidOut(BaseModel):
     id: uuid.UUID
     price_amount: Decimal | None
     percent: Decimal | None
+    intro: str | None
     message: str
     status: BidStatus
     created_at: datetime
     designer: DesignerBrief
+    projects: list[ProjectBrief]
 
 
 class CallOut(BaseModel):
@@ -95,6 +104,8 @@ class CallOut(BaseModel):
     base_image_url: str | None
     provider: str | None
     seller_brand: str | None
+    seller_slug: str | None
+    seller_logo: str | None
     attachments: list[AttachmentOut]
     bids_count: int
     editable: bool
@@ -103,6 +114,7 @@ class CallOut(BaseModel):
     published_at: datetime | None
     collaboration_id: uuid.UUID | None
     created_at: datetime
+    my_bid: BidOut | None  # the requesting designer's own application, if any
 
 
 class CallCreate(BaseModel):
@@ -132,10 +144,15 @@ class CallPatch(BaseModel):
     publish: bool | None = None
 
 
+MAX_BID_PROJECTS = 6
+
+
 class BidCreate(BaseModel):
     price_amount: Decimal | None = None
     percent: Decimal | None = None
+    intro: str | None = Field(default=None, max_length=160)
     message: str = Field(min_length=1)
+    project_ids: list[uuid.UUID] = Field(default_factory=list)
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
@@ -190,6 +207,12 @@ def _editable(call: DesignerCall) -> bool:
     return call.status in (CallStatus.DRAFT, CallStatus.OPEN)
 
 
+def _own_bid(call: DesignerCall, designer_profile_id: uuid.UUID | None) -> Bid | None:
+    if designer_profile_id is None:
+        return None
+    return next((b for b in call.bids if b.designer_profile_id == designer_profile_id), None)
+
+
 def _out(
     call: DesignerCall,
     collab: Collaboration | None = None,
@@ -215,6 +238,8 @@ def _out(
         base_image_url=base.image_url if base else None,
         provider=base.print_shop.name if base and base.print_shop else None,
         seller_brand=call.seller.store_name if call.seller else None,
+        seller_slug=call.seller.slug if call.seller else None,
+        seller_logo=call.seller.avatar_url if call.seller else None,
         attachments=[AttachmentOut(id=a.id, url=a.url, kind=a.kind) for a in call.attachments],
         bids_count=len(call.bids),
         editable=_editable(call),
@@ -225,6 +250,7 @@ def _out(
         published_at=call.published_at,
         collaboration_id=collab.id if collab else None,
         created_at=call.created_at,
+        my_bid=_bid_out(my_bid) if (my_bid := _own_bid(call, designer_profile_id)) else None,
     )
 
 
@@ -454,6 +480,16 @@ def delete_call(
 
 # ── applications (bids) ──────────────────────────────────────────────────────────
 
+def _project_brief(pr: DesignerProject) -> ProjectBrief:
+    imgs = sorted(pr.images, key=lambda i: i.position)
+    return ProjectBrief(
+        id=pr.id,
+        title=pr.title,
+        cover_url=imgs[0].image_url if imgs else None,
+        categories=list(pr.categories or []),
+    )
+
+
 def _bid_out(bid: Bid, stats: dict | None = None) -> BidOut:
     d = bid.designer
     s = (stats or {}).get(d.id, {})
@@ -461,9 +497,11 @@ def _bid_out(bid: Bid, stats: dict | None = None) -> BidOut:
         id=bid.id,
         price_amount=bid.price_amount,
         percent=bid.percent,
+        intro=bid.intro,
         message=bid.message,
         status=bid.status,
         created_at=bid.created_at,
+        projects=[_project_brief(p) for p in bid.projects],
         designer=DesignerBrief(
             id=d.id,
             display_name=d.display_name,
@@ -531,6 +569,20 @@ def submit_bid(
     if call.seller and call.seller.user_id == user.id:
         raise HTTPException(status_code=400, detail="You can't apply to your own job.")
 
+    # Resolve the attached portfolio — only the designer's OWN published projects.
+    projects: list[DesignerProject] = []
+    if payload.project_ids:
+        ids = list(dict.fromkeys(payload.project_ids))[:MAX_BID_PROJECTS]
+        projects = db.scalars(
+            select(DesignerProject).where(
+                DesignerProject.id.in_(ids),
+                DesignerProject.designer_profile_id == designer.id,
+                DesignerProject.published.is_(True),
+            )
+        ).all()
+
+    intro = (payload.intro or "").strip() or None
+
     existing = db.scalar(
         select(Bid).where(Bid.call_id == call_id, Bid.designer_profile_id == designer.id)
     )
@@ -539,7 +591,9 @@ def submit_bid(
             raise HTTPException(status_code=400, detail="Your application has already been decided.")
         existing.price_amount = payload.price_amount
         existing.percent = payload.percent
+        existing.intro = intro
         existing.message = payload.message.strip()
+        existing.projects = projects
         bid = existing
     else:
         bid = Bid(
@@ -547,7 +601,9 @@ def submit_bid(
             designer_profile_id=designer.id,
             price_amount=payload.price_amount,
             percent=payload.percent,
+            intro=intro,
             message=payload.message.strip(),
+            projects=projects,
         )
         db.add(bid)
         if call.seller:

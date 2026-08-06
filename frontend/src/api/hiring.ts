@@ -28,14 +28,23 @@ export interface DesignerBrief {
   portfolio_preview: string[];
 }
 
+export interface ProjectBrief {
+  id: string;
+  title: string;
+  cover_url: string | null;
+  categories: string[];
+}
+
 export interface Bid {
   id: string;
   price_amount: string | null;
   percent: string | null;
+  intro: string | null;
   message: string;
   status: BidStatus;
   created_at: string;
   designer: DesignerBrief;
+  projects: ProjectBrief[];
 }
 
 export interface CallAttachment {
@@ -67,6 +76,9 @@ export interface DesignerCall {
   base_image_url: string | null;
   provider: string | null;
   seller_brand: string | null;
+  seller_slug: string | null;
+  seller_logo: string | null;
+  my_bid: Bid | null;
   attachments: CallAttachment[];
   bids_count: number;
   editable: boolean;
@@ -140,7 +152,13 @@ export async function listBids(callId: string): Promise<Bid[]> {
 
 export async function submitBid(
   callId: string,
-  input: { price_amount?: number | null; percent?: number | null; message: string },
+  input: {
+    price_amount?: number | null;
+    percent?: number | null;
+    intro?: string | null;
+    message: string;
+    project_ids?: string[];
+  },
 ): Promise<Bid> {
   return (await api.post<Bid>(`/designer-calls/${callId}/bids`, input)).data;
 }
