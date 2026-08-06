@@ -4,6 +4,7 @@ import { Link, NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../../auth";
 import { cn } from "../../lib/cn";
 import { CartButton } from "../cart/CartButton";
+import { WishlistButton } from "../wishlist/WishlistButton";
 import { Button } from "../ui/Button";
 import { Brand } from "./Brand";
 
@@ -39,6 +40,8 @@ export function PublicLayout() {
             ))}
           </nav>
           <div className="ml-auto flex items-center gap-2">
+            <WishlistButton />
+            {user && <NotificationsMenu />}
             <CartButton />
             {user ? (
               <>

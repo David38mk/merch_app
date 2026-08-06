@@ -19,6 +19,7 @@ from app.api.routers import (
     shop_items,
     storefront,
     stubs,
+    wishlist,
 )
 
 api_router = APIRouter(prefix="/api")
@@ -39,6 +40,7 @@ api_router.include_router(hiring.router)
 api_router.include_router(designers.router)
 api_router.include_router(designers.public_router)
 api_router.include_router(collaborations.router)
+api_router.include_router(wishlist.router)
 for r in orders.routers:
     api_router.include_router(r)
 for stub in stubs.routers:

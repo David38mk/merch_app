@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Check,
   ChevronLeft,
+  Heart,
   Loader2,
   Lock,
   Package2,
@@ -16,6 +17,7 @@ import { Link, useParams } from "react-router-dom";
 
 import { getProductDetail, type ProductDetail } from "../api/marketplace";
 import { useCart } from "../cart";
+import { useWishlist } from "../wishlist";
 import { DesignPreviewThumb } from "../components/design/DesignPreviewThumb";
 import { ProductTile } from "../components/marketplace/ProductTile";
 import { BuyNowModal } from "../components/storefront/BuyNowModal";
@@ -26,6 +28,7 @@ import { colorHex, isLightColor } from "../lib/colorHex";
 export default function ProductDetails() {
   const { id = "" } = useParams();
   const { add } = useCart();
+  const wishlist = useWishlist();
   const { data: p, isLoading, isError } = useQuery({
     queryKey: ["product", id],
     queryFn: () => getProductDetail(id),
@@ -170,6 +173,29 @@ export default function ProductDetails() {
             <Store className="h-4 w-4" /> {p.brand.name}
           </Link>
           <h1 className="mt-1.5 text-2xl font-bold text-slate-900">{p.name}</h1>
+          <div className="mt-1.5 flex items-start justify-between gap-3">
+            <h1 className="text-2xl font-bold text-slate-900">{p.name}</h1>
+            <button
+              onClick={() => wishlist.toggle(p.id)}
+              title={wishlist.has(p.id) ? "Remove from wishlist" : "Save to wishlist"}
+              aria-pressed={wishlist.has(p.id)}
+              className={cn(
+                "flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition",
+                wishlist.has(p.id)
+                  ? "border-rose-200 bg-rose-50 text-rose-500"
+                  : "border-slate-200 text-slate-400 hover:text-rose-500",
+              )}
+            >
+              <Heart className={cn("h-5 w-5", wishlist.has(p.id) && "fill-current")} />
+            </button>
+          </div>
+          {p.rating_count > 0 && (
+            <a href="#reviews" className="mt-2 inline-flex items-center gap-2 text-sm text-slate-500 hover:text-slate-700">
+              <Stars value={p.rating_average ?? 0} />
+              <span className="font-medium text-slate-700">{(p.rating_average ?? 0).toFixed(1)}</span>
+              <span>· {p.rating_count} review{p.rating_count === 1 ? "" : "s"}</span>
+            </a>
+          )}
           <p className="mt-2 text-2xl font-semibold text-slate-900">€{p.price}</p>
           {p.category && <p className="mt-1 text-sm text-slate-400">{p.category}</p>}
 

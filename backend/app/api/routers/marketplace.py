@@ -609,6 +609,82 @@ def order_confirmation(token: str, db: Session = Depends(get_db)) -> OrderConfir
 
 # ── wishlist cards (saved products, with live availability) ───────────────────
 
+class WishlistCard(BaseModel):
+    shop_item_id: str
+    name: str
+    price: str
+    category: str | None
+    brand_slug: str
+    brand_name: str
+    base_image_url: str | None
+    design_url: str | None
+    pos_x: float
+    pos_y: float
+    scale: float
+    rotation: float
+    available: bool                    # LISTED + store LIVE + a buyable variant
+    sole_variant: VariantOut | None    # set only when exactly one buyable variant
+
+
+class WishlistCardsIn(BaseModel):
+    ids: list[str]
+
+
+@router.post("/wishlist-cards", response_model=list[WishlistCard])
+def wishlist_cards(payload: WishlistCardsIn, db: Session = Depends(get_db)) -> list[WishlistCard]:
+    """Render saved products (by id) with live availability. Public — guests and
+    logged-in buyers share this card-builder. Input order is preserved; ids that
+    no longer resolve to a product (hard-deleted) are dropped. Unlisted / offline
+    products are kept but marked unavailable (a wishlist is 'save for later')."""
+    out: list[WishlistCard] = []
+    for raw in payload.ids:
+        try:
+            sid = uuid.UUID(raw)
+        except (ValueError, AttributeError):
+            continue
+        item = db.scalar(
+            select(ShopItem)
+            .where(ShopItem.id == sid)
+            .options(
+                selectinload(ShopItem.base_item).selectinload(BaseItem.variants),
+                selectinload(ShopItem.base_item).selectinload(BaseItem.category),
+                selectinload(ShopItem.seller),
+            )
+        )
+        if item is None:
+            continue
+        seller = item.seller
+        base = item.base_item
+        buyable = [v for v in (base.variants if base else []) if v.is_available]
+        live = item.state == ShopItemState.LISTED and seller is not None and seller.store_state == StoreState.LIVE
+        available = bool(live and buyable)
+        sole = (
+            VariantOut(color=buyable[0].color, size=buyable[0].size, available=True)
+            if available and len(buyable) == 1
+            else None
+        )
+        design = db.get(Design, item.design_id) if item.design_id else None
+        out.append(
+            WishlistCard(
+                shop_item_id=str(item.id),
+                name=item.name,
+                price=str(item.price),
+                category=base.category.name if base and base.category else None,
+                brand_slug=seller.slug or "" if seller else "",
+                brand_name=(seller.store_name or "Untitled store") if seller else "Unknown",
+                base_image_url=base.image_url if base else None,
+                design_url=design.resource_url if design else None,
+                pos_x=item.pos_x,
+                pos_y=item.pos_y,
+                scale=item.scale,
+                rotation=item.rotation,
+                available=available,
+                sole_variant=sole,
+            )
+        )
+    return out
+
+
 def _related(db: Session, item: ShopItem, base: BaseItem | None) -> list[ProductCard]:
     """Other products from the same brand, then similar products (same category)
     from other live stores. Deduped, self excluded, capped."""

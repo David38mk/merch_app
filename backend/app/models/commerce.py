@@ -154,6 +154,19 @@ class OrderEvent(UUIDMixin, TimestampMixin, Base):
     order: Mapped["Order"] = relationship(back_populates="events")
 
 
+class WishlistItem(UUIDMixin, TimestampMixin, Base):
+    """A product a buyer saved for later. One row per (buyer, product); the
+    saved thing is the product, not a variant (size/colour is chosen at add-to-
+    cart time). Persists server-side so the wishlist follows the buyer across
+    devices; guests keep a local list that merges in on login."""
+
+    __tablename__ = "wishlist_items"
+    __table_args__ = (UniqueConstraint("buyer_user_id", "shop_item_id", name="uq_wishlist_item"),)
+
+    buyer_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    shop_item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("shop_items.id", ondelete="CASCADE"))
+
+
 class DiscountCode(UUIDMixin, TimestampMixin, Base):
     """A promotional code applied at checkout. Platform-wide when
     seller_profile_id is null, else valid only on that brand's orders.

@@ -9,6 +9,7 @@ import Landing from "./pages/Landing";
 import { Privacy, Terms } from "./pages/Legal";
 import Cart from "./pages/Cart";
 import Checkout from "./pages/Checkout";
+import Wishlist from "./pages/Wishlist";
 import Login from "./pages/Login";
 import Marketplace from "./pages/Marketplace";
 import OrderConfirmed from "./pages/OrderConfirmed";
@@ -76,6 +77,7 @@ export default function App() {
         <Route path="/marketplace" element={<Marketplace />} />
         <Route path="/p/:id" element={<ProductDetails />} />
         <Route path="/cart" element={<Cart />} />
+        <Route path="/wishlist" element={<Wishlist />} />
         <Route path="/checkout/:slug" element={<Checkout />} />
         <Route path="/order/confirmed/:token" element={<OrderConfirmed />} />
         <Route
