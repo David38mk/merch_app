@@ -1,7 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
-import { Loader2, Minus, Plus, ShoppingBag, Store, Tag, Trash2, X } from "lucide-react";
+import { Loader2, Minus, Plus, RotateCcw, ShoppingBag, Store, Tag, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { validateDiscount } from "../api/marketplace";
 import { DesignPreviewThumb } from "../components/design/DesignPreviewThumb";
@@ -14,6 +14,9 @@ import { computeTotals } from "../lib/cartTotals";
 
 export default function Cart() {
   const { byBrand, count } = useCart();
+  const location = useLocation();
+  const reorder = (location.state as { reorder?: { added: number; unavailable: string[] } } | null)?.reorder;
+  const [showReorder, setShowReorder] = useState(true);
 
   if (count === 0) {
     return (
@@ -42,6 +45,26 @@ export default function Cart() {
           Continue shopping →
         </Link>
       </div>
+
+      {reorder && showReorder && (
+        <div className="mb-5 flex items-start gap-3 rounded-lg bg-emerald-50 px-4 py-3 text-sm">
+          <RotateCcw className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+          <div className="flex-1">
+            <p className="font-medium text-emerald-800">
+              Added {reorder.added} item{reorder.added === 1 ? "" : "s"} from your previous order.
+            </p>
+            {reorder.unavailable.length > 0 && (
+              <p className="mt-0.5 text-emerald-700">
+                {reorder.unavailable.length} item{reorder.unavailable.length === 1 ? "" : "s"} couldn't be added (no
+                longer available): {reorder.unavailable.join(", ")}.
+              </p>
+            )}
+          </div>
+          <button onClick={() => setShowReorder(false)} className="text-emerald-700 hover:text-emerald-900">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       <div className="space-y-6">
         {byBrand.map((g) => (

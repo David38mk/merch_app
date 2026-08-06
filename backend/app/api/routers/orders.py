@@ -1089,10 +1089,17 @@ def _summary(order: Order) -> str:
 
 @buyer.get("/orders", response_model=BuyerOrderList)
 def buyer_orders(
+    q: str | None = None,
+    status_filter: str | None = Query(default=None, alias="status"),
+    date_from: date | None = None,
+    date_to: date | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(require_role(Role.BUYER)),
 ) -> BuyerOrderList:
-    """Every order this account has placed, across all storefronts."""
+    """The buyer's full order history across all storefronts, with the same
+    server-side search + filters the seller Orders page uses. Snapshots
+    (name/price on OrderItem) keep history intact even if a product is later
+    unpublished."""
     orders = db.scalars(
         select(Order)
         .where(Order.buyer_user_id == user.id)
@@ -1100,8 +1107,34 @@ def buyer_orders(
         .order_by(Order.created_at.desc())
     ).all()
 
+    # Display status is derived, so filter/search after derivation.
+    rows = [(o, display_status(o)) for o in orders]
+
+    if status_filter:
+        if status_filter not in DISPLAY_STATUSES:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown status.")
+        rows = [(o, ds) for o, ds in rows if ds == status_filter]
+    if date_from:
+        start = datetime.combine(date_from, time.min, tzinfo=timezone.utc)
+        rows = [(o, ds) for o, ds in rows if o.created_at >= start]
+    if date_to:
+        end = datetime.combine(date_to, time.max, tzinfo=timezone.utc)
+        rows = [(o, ds) for o, ds in rows if o.created_at <= end]
+    if q:
+        needle = q.strip().lower()
+
+        def matches(o: Order) -> bool:
+            store = _store_of(db, o)
+            if store and needle in (store.store_name or "").lower():
+                return True
+            if needle in short_id(o.id).lower() or needle in o.id.hex.lower():
+                return True
+            return any(needle in (i.name_at_purchase or "").lower() for i in o.items)
+
+        rows = [(o, ds) for o, ds in rows if matches(o)]
+
     items: list[BuyerOrderListItem] = []
-    for o in orders:
+    for o, ds in rows:
         store = _store_of(db, o)
         thumb = _item_out(db, o.items[0]) if o.items else None
         items.append(
@@ -1115,11 +1148,85 @@ def buyer_orders(
                 item_count=sum(i.quantity for i in o.items),
                 total=o.total_amount,
                 created_at=o.created_at,
-                status=display_status(o),
+                status=ds,
                 tracking_number=o.tracking_number,
             )
         )
     return BuyerOrderList(items=items)
+
+
+class ReorderLine(BaseModel):
+    """A cart-ready line (matches the frontend CartItem shape) rebuilt from a
+    past order at the product's *current* price/mockup."""
+    shop_item_id: uuid.UUID
+    name: str
+    price: Decimal
+    color: str
+    size: str
+    quantity: int
+    brand_slug: str
+    brand_name: str
+    base_image_url: str | None
+    design_url: str | None
+    pos_x: float
+    pos_y: float
+    scale: float
+    rotation: float
+
+
+class ReorderOut(BaseModel):
+    added: list[ReorderLine]
+    unavailable: list[str]  # names of lines that can't be re-bought
+
+
+@buyer.post("/orders/{order_id}/reorder", response_model=ReorderOut)
+def reorder(
+    order_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(Role.BUYER)),
+) -> ReorderOut:
+    """Rebuild a past order's cart lines from the *live* catalog. Still-buyable
+    lines come back cart-ready (current price/mockup); unpublished products or
+    sold-out variants are reported as unavailable, not silently dropped."""
+    order = db.scalar(select(Order).where(Order.id == order_id).options(selectinload(Order.items)))
+    if order is None or order.buyer_user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
+    seller = db.get(SellerProfile, order.seller_profile_id)
+    store_live = seller is not None and seller.store_state == StoreState.LIVE
+
+    added: list[ReorderLine] = []
+    unavailable: list[str] = []
+    for it in order.items:
+        shop = db.get(ShopItem, it.shop_item_id)
+        fallback_name = it.name_at_purchase or (shop.name if shop else "Product")
+        if shop is None or shop.state != ShopItemState.LISTED or not store_live:
+            unavailable.append(fallback_name)
+            continue
+        variant = db.get(BaseItemVariant, it.base_item_variant_id)
+        if variant is None or not variant.is_available:
+            unavailable.append(shop.name)
+            continue
+        base = db.get(BaseItem, shop.base_item_id)
+        design = db.get(Design, shop.design_id) if shop.design_id else None
+        added.append(
+            ReorderLine(
+                shop_item_id=shop.id,
+                name=shop.name,
+                price=shop.price,  # reorder at the current price, not the old snapshot
+                color=variant.color,
+                size=variant.size,
+                quantity=it.quantity,
+                brand_slug=seller.slug or "",
+                brand_name=seller.store_name or "Untitled store",
+                base_image_url=base.image_url if base else None,
+                design_url=design.resource_url if design else None,
+                pos_x=shop.pos_x,
+                pos_y=shop.pos_y,
+                scale=shop.scale,
+                rotation=shop.rotation,
+            )
+        )
+    return ReorderOut(added=added, unavailable=unavailable)
 
 
 @buyer.get("/orders/{order_id}", response_model=BuyerOrderDetail)

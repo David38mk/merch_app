@@ -66,10 +66,45 @@ export interface BuyerOrderDetail {
   events: BuyerOrderEvent[];
 }
 
-export async function getBuyerOrders(): Promise<BuyerOrderSummary[]> {
-  return (await api.get<{ items: BuyerOrderSummary[] }>("/buyer/orders")).data.items;
+export interface BuyerOrderFilters {
+  q?: string;
+  status?: OrderDisplayStatus;
+  date_from?: string;
+  date_to?: string;
+}
+
+export async function getBuyerOrders(filters: BuyerOrderFilters = {}): Promise<BuyerOrderSummary[]> {
+  const params = Object.fromEntries(Object.entries(filters).filter(([, v]) => v));
+  return (await api.get<{ items: BuyerOrderSummary[] }>("/buyer/orders", { params })).data.items;
 }
 
 export async function getBuyerOrder(id: string): Promise<BuyerOrderDetail> {
   return (await api.get<BuyerOrderDetail>(`/buyer/orders/${id}`)).data;
+}
+
+/** A cart-ready line rebuilt from a past order (current price/mockup). */
+export interface ReorderLine {
+  shop_item_id: string;
+  name: string;
+  price: string;
+  color: string;
+  size: string;
+  quantity: number;
+  brand_slug: string;
+  brand_name: string;
+  base_image_url: string | null;
+  design_url: string | null;
+  pos_x: number;
+  pos_y: number;
+  scale: number;
+  rotation: number;
+}
+
+export interface ReorderResult {
+  added: ReorderLine[];
+  unavailable: string[];
+}
+
+export async function reorder(id: string): Promise<ReorderResult> {
+  return (await api.post<ReorderResult>(`/buyer/orders/${id}/reorder`)).data;
 }
