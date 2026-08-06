@@ -15,7 +15,7 @@ Do this once before testing.
 docker compose up -d
 
 # 2. Backend (from /backend, venv active)
-alembic upgrade head            # must end at head d7e1f5a83c92
+alembic upgrade head            # must end at head c3f8b0e51d94 (payouts)
 python -m app.seed_catalog      # 2 print partners + ~26 blanks
 python -m app.seed_designers    # 3 demo designers
 uvicorn app.main:app --reload --port 8001
@@ -548,6 +548,243 @@ Profile menu → **Settings** (`/settings`).
 
 ---
 
+# ═══════════════════════════════════════════════════════════════════
+# BUYER COMMERCE (suites 18–24)
+# ═══════════════════════════════════════════════════════════════════
+
+> **Buyer setup for this block.** Log out of the seller account. Sign up a
+> **buyer** account (`/signup`), or reuse an existing one, and **stay logged in
+> while shopping** so orders/wishlist/reviews attach to it. You need at least one
+> **published** product on a storefront (from suites 5/8). Keep the seller and
+> print-shop browsers available for the fulfilment steps.
+
+## 18. Order confirmation
+
+### 18.1 Checkout with card display
+1. Open a product `/p/:id`, choose a variant, **Add to cart**; add a second product from the same brand. **Cart → Checkout**.
+2. Fill contact + shipping, pick a shipping method (Standard/Express), enter a card number (e.g. `4242 4242 4242 4242`) + brand.
+- ✅ Order places; you land on **Order confirmed** `/order/confirmed/:token`.
+
+### 18.2 Confirmation content
+- ✅ Unique order number, order date, purchased items with the design mockup, money breakdown (subtotal − discount + shipping + tax = total).
+- ✅ **Payment method** shows brand + last-4 only (e.g. "Visa •• 4242") — never the full number.
+- ✅ **What happens next** tracker: "Order received" ticked, later steps pending.
+- ✅ **Estimated delivery** window shown (Standard 5–7 / Express 2–3 business days).
+- ✅ Actions **Track order / Continue shopping / Visit brand store** all work.
+- ✅ Backend `🔌` log shows the order-confirmation email.
+
+### 18.3 Snapshot stability
+1. Refresh the confirmation page.
+- ✅ Same order number, dates, payment label and delivery window (snapshotted, not recomputed).
+
+---
+
+## 19. Order tracking
+
+### 19.1 Timeline
+1. From the confirmation or **My orders** → open `/orders/:id`.
+- ✅ Status timeline (Order Placed → Payment Confirmed → Sent to Production → In Production → Quality Check → Shipped → Delivered) with the current state highlighted; shows number, current status, estimated delivery, delivery address.
+
+### 19.2 Updates from the print shop (real fulfilment)
+1. In the print-shop browser (`acme@partners.local`), advance this order's item through production and **mark shipped** with a **carrier + tracking number**.
+2. Back on the buyer's order page.
+- ✅ Status advances; **carrier + tracking number** appear with a **"Track with carrier"** deep link.
+3. Advance to **Delivered**.
+- ✅ Buyer sees Delivered + delivered date; a "Your order was delivered ✅" and a "How was your order? ⭐" review-request notification fire.
+
+---
+
+## 20. Order history + reorder
+
+### 20.1 List, search, filters
+1. **My orders** `/orders` — all your orders with number, date, products, total, status.
+2. Search by product / brand / order number; filter by status + date range.
+- ✅ Server-side filtering narrows the list correctly.
+
+### 20.2 Reorder
+1. On a past order → **Reorder**.
+- ✅ Still-buyable lines are added to the cart at the **current** price; unavailable ones are reported; lands on the cart with a summary banner.
+
+### 20.3 History survives unpublish
+1. As the seller, archive/unpublish a product you sold. As the buyer, revisit history.
+- ✅ The past order still shows the product (name/price snapshot preserved).
+
+---
+
+## 21. Wishlist
+
+### 21.1 Guest → merge on login
+1. Logged **out**, click the **heart** on a product. ✅ Heart fills; header wishlist badge increments (local).
+2. Log in as your buyer account. ✅ The guest item **merges** into your server wishlist (persists across refresh).
+
+### 21.2 Wishlist page
+1. `/wishlist` — each item shows image, name, brand, price, **availability** badge.
+2. **Move to cart**: a single-variant product goes straight to cart; a multi-size/colour product opens the PDP to pick options.
+3. Unpublish a saved product (as seller) → revisit. ✅ It's **kept but marked unavailable** (unlike the cart, which drops it).
+4. Remove via the heart. ✅ Gone after refresh; follows you across devices (log in on a second browser).
+
+---
+
+## 22. Reviews & ratings
+
+> Prereq: an order **delivered** to your buyer account (suite 19).
+
+### 22.1 Verified-purchase gate
+1. On a product you did **not** purchase — no review form. ✅ Only verified purchasers can review.
+2. On a **delivered** product's page → **Write a review**.
+
+### 22.2 Submit + one-per-product
+1. 1–5 stars, title, written review (min length enforced), optional photos. ✅ Too-short text refused; on success the review shows as verified.
+2. Try reviewing the same product again. ✅ Refused / becomes an edit — one review per purchased product.
+
+### 22.3 Display + reporting
+- ✅ Product page shows average rating, review count, star breakdown, customer photos; the marketplace/store card reflects the rating.
+1. From another account, **report** a review past the threshold. ✅ It auto-hides; the aggregate recomputes over published reviews only.
+
+---
+
+## 23. Buyer notifications
+
+### 23.1 Lifecycle notifications
+- ✅ "Order confirmed 🎉" on checkout; "Your order shipped 📦" and "delivered ✅" as the print shop advances; a review request on delivery.
+
+### 23.2 Center + email mirror
+1. `/notifications` — mark read, mark all read, delete; category filters include Orders, Shipping, Reviews, Wishlist, Promotions, Announcements.
+- ✅ Work as in suite 13; buyer categories populated; each has a matching `🔌` email line (except silenced ones).
+
+---
+
+## 24. Account settings — privacy & delete account
+
+### 24.1 Privacy section
+1. Settings → **Privacy**. ✅ Download-data (future) shown; **Delete account** present.
+
+### 24.2 Delete account
+1. **Delete account** → wrong password. ✅ Refused. (Google-only accounts must type "DELETE".)
+2. Confirm with the correct password. ✅ Logged out immediately; reviews you left now show "Deleted user"; orders stay intact for sellers.
+3. Try logging in with the deleted account. ✅ Blocked — "This account has been closed." (403).
+
+---
+
+# ═══════════════════════════════════════════════════════════════════
+# DESIGNER PLATFORM (suites 25–31)
+# ═══════════════════════════════════════════════════════════════════
+
+> This block builds its own designer account and a job to collaborate on. You'll
+> also reuse a **seller** account (yours from suite 1) to post a job and, later,
+> to accept an application and complete a collaboration so earnings exist.
+
+## 25. Designer signup & onboarding
+
+### 25.1 Join as designer
+1. Log out. Go to `/join-as-designer` (or the "Become a designer" CTA on the landing page). Sign up.
+- ✅ **Two** required checkboxes — Terms **and** the **Designer Agreement**; missing the agreement is refused.
+- ✅ On success you get BUYER+DESIGNER roles and land on the onboarding wizard.
+
+### 25.2 Onboarding wizard (resumable)
+1. Walk Welcome → Profile → Skills → Portfolio → Finish.
+- ✅ **Profile**: cover + avatar upload, display name, bio, country, four contact fields (Website/Behance/Dribbble/Instagram).
+- ✅ **Skills**: multi-select from the fixed set + an experience level.
+- ✅ **Portfolio**: image upload + external links, with a real **Skip for now**.
+- ✅ Each step saves as you go — leave mid-way and return, progress is kept. Finish routes to `/designer`.
+
+---
+
+## 26. Designer public profile
+
+### 26.1 Public & shareable
+1. Copy your profile URL `/designers/:slug`; open it **logged out** (incognito).
+- ✅ Loads for anyone (no login): cover, avatar, experience badge, bio, ratings, completed jobs, country, member-since, skills, contact links, portfolio.
+
+### 26.2 Owner edit vs visitor
+1. Logged in as the owner, open your own profile. ✅ An **Edit profile** button (opens the onboarding wizard as editor).
+2. As another user (or logged out). ✅ No edit button; a disabled "Start chat — soon" instead.
+
+---
+
+## 27. Designer portfolio (projects)
+
+### 27.1 Create + images
+1. Designer nav → **Portfolio** `/designer/portfolio` → **Add project**: title, description, categories → **Create**. ✅ Saved as a **Draft**.
+2. Drag-and-drop (or click) several images. ✅ First image is the **cover**; "Make cover" reorders; delete removes; max 12.
+
+### 27.2 Publish rules
+1. Try **Publish** with no images. ✅ Refused. Add an image → Publish.
+2. Remove the last image of a published project. ✅ It **auto-unpublishes**.
+3. Toggle **Feature**; edit title/categories.
+
+### 27.3 On the public profile
+- ✅ **Published** projects show (featured first), drafts hidden; each shows cover, title, month, categories.
+
+---
+
+## 28. Designer job browsing
+
+> Prereq: at least one **published** job (suite 15.2), ideally a few with different categories/payment types.
+
+### 28.1 Browse + real-time
+1. As a designer, **Browse jobs** `/designer`. ✅ Cards show category, title, brand, product, compensation, deadline, posted date.
+2. In a seller browser, publish a new job / close an existing one. ✅ Within ~20s the designer list updates (published appears, closed drops) with no manual refresh.
+
+### 28.2 Search, filters, sort
+1. Search by title / brand / product. ✅ Narrows instantly.
+2. Filter by Category, Payment type, minimum Revenue share (≥5/10/20%); toggle Sort **Newest** ⟷ **Deadline**. ✅ Combinations narrow/reorder correctly; **Clear** resets.
+
+---
+
+## 29. Job details & application
+
+### 29.1 Detail page
+1. Open a job. ✅ Product preview, brief, inspiration, deadline, **payment model**, category, **reference images**, and a **brand block** with a **View store** link.
+
+### 29.2 Apply
+1. **Apply**: short **introduction**, **cover message**, **compensation** (only the fields the job's payment model allows), and **attach portfolio** (only your **published** projects, up to 6).
+- ✅ Submits; the seller gets an application notification.
+2. On the seller side, open the applicant. ✅ Seller sees your intro headline + the projects you attached.
+
+### 29.3 One application per job
+1. As the designer, apply again with a different intro / fewer projects. ✅ It **updates** the same application (no duplicate); the form was prefilled with your previous values.
+
+---
+
+## 30. Collaboration workspace — status & real-time
+
+> Augments suite 15.5. Get to a collaboration by accepting an application (suite 15.4).
+
+### 30.1 Status stepper
+1. Open `/collaborations/:id`. ✅ A horizontal **7-stage stepper** (Accepted → Working → Draft submitted → Revision → Updated draft → Final approval → Completed) sits above the activity log; the current step is highlighted; if no revision occurred those two steps show **Skipped**.
+
+### 30.2 Real-time reflection
+1. Keep the designer's workspace open; in the seller browser approve / request revision / pay. ✅ Within ~15s the designer's stepper + activity log update **without** a manual refresh (and vice-versa).
+
+### 30.3 Success → product
+1. Complete the flow (final approved; fixed fee paid if any). ✅ Stepper reaches **Completed**; the auto-created draft product appears in the seller's catalog (suite 15.6).
+
+---
+
+## 31. Designer payouts / earnings
+
+> Prereq: at least one **completed** collaboration. For revenue share, the collab's
+> product must be **published and sold** (mark that order **delivered** to see the
+> share become Available).
+
+### 31.1 Overview
+1. Designer nav → **Earnings** `/designer/earnings`.
+- ✅ Four cards: **Total earnings**, **Available balance**, **Pending balance**, **Lifetime revenue**. Fixed fees count once the collab payment completed; revenue share accrues from paid sales.
+
+### 31.2 Availability holds
+- ✅ A sale's revenue share is **Pending** until that order is **delivered**, then **Available**. A fixed fee is Pending until the seller completes the collab payment.
+
+### 31.3 Project earnings
+- ✅ Table lists each completed project: seller, product, payment type, amount earned (+ pending shown), status.
+
+### 31.4 Request withdrawal
+1. Try to withdraw below **€50**. ✅ Refused. Try above your available balance. ✅ Refused.
+2. Withdraw a valid amount. ✅ **Available balance drops**; a **Payout** row appears in history (date, amount, **Processing**, method "Bank transfer"); Total earnings unchanged.
+3. Withdraw the rest (leave the amount blank = full available). ✅ Available goes to €0.00.
+
+---
+
 ## Result log
 
 | Suite | Pass | Fail | Notes |
@@ -569,3 +806,17 @@ Profile menu → **Settings** (`/settings`).
 | 15 Hiring + collab | | | |
 | 16 Buyer | | | |
 | 17 Cross-cutting | | | |
+| 18 Order confirmation | | | |
+| 19 Order tracking | | | |
+| 20 Order history + reorder | | | |
+| 21 Wishlist | | | |
+| 22 Reviews & ratings | | | |
+| 23 Buyer notifications | | | |
+| 24 Privacy + delete account | | | |
+| 25 Designer signup + onboarding | | | |
+| 26 Designer public profile | | | |
+| 27 Designer portfolio | | | |
+| 28 Job browsing | | | |
+| 29 Job details + application | | | |
+| 30 Collab workspace status/real-time | | | |
+| 31 Designer payouts | | | |
