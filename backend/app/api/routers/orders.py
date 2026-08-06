@@ -23,7 +23,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.discounts import resolve_discount
 from app.core.notify import push
-from app.core.pricing import SHIPPING_METHODS, commission_rate, order_totals
+from app.core.pricing import SHIPPING_METHODS, commission_rate, delivery_window, order_totals
 from app.core.security import create_confirm_token
 from app.seams.delivery import send_order_confirmation
 from app.models.catalog import BaseItem, BaseItemVariant
@@ -115,6 +115,9 @@ class CheckoutIn(BaseModel):
     apartment: str | None = None
     shipping_method: str = "standard"
     idempotency_key: str | None = None
+    # Non-sensitive card display only (PCI-safe) — never the PAN/CVV/expiry.
+    card_brand: str | None = None
+    card_last4: str | None = None
 
 
 class CartLine(BaseModel):
@@ -140,6 +143,8 @@ class CartCheckoutIn(BaseModel):
     shipping_method: str = "standard"
     # A repeat submit with the same key returns the first order (dedup).
     idempotency_key: str | None = None
+    card_brand: str | None = None
+    card_last4: str | None = None
 
 
 class CheckoutOut(BaseModel):
@@ -349,6 +354,15 @@ def _idempotent_hit(db: Session, key: str | None) -> Order | None:
     return db.scalar(select(Order).where(Order.idempotency_key == key))
 
 
+def _last4(value: str | None) -> str | None:
+    digits = "".join(c for c in (value or "") if c.isdigit())
+    return digits[-4:] if len(digits) >= 4 else None
+
+
+def _delivery(method: str) -> tuple[date, date]:
+    return delivery_window(date.today(), method if method in SHIPPING_METHODS else "standard")
+
+
 def _item_out(db: Session, it: OrderItem) -> OrderItemOut:
     shop_item = db.get(ShopItem, it.shop_item_id)
     variant = db.get(BaseItemVariant, it.base_item_variant_id)
@@ -480,6 +494,10 @@ def checkout(
         total_amount=totals["total"],
         shipping_method=payload.shipping_method,
         idempotency_key=payload.idempotency_key,
+        card_brand=(payload.card_brand or "").strip() or None,
+        card_last4=_last4(payload.card_last4),
+        est_delivery_from=_delivery(payload.shipping_method)[0],
+        est_delivery_to=_delivery(payload.shipping_method)[1],
         ship_name=payload.name.strip(),
         ship_phone=(payload.phone or "").strip() or None,
         ship_address=_full_address(payload.address, payload.apartment),
@@ -537,6 +555,12 @@ def checkout(
             f"{item.name} ×{payload.quantity} ({variant.color}/{variant.size}) is paid and ready to produce.",
             link_url="/printshop",
         )
+    # Buyer side: in-app only — checkout already emails the confirmation receipt.
+    push(
+        db, buyer.id, NotificationType.ORDER, "Order confirmed 🎉",
+        f"We got your order #{short_id(order.id)} — we'll let you know as it ships.",
+        link_url=f"/orders/{order.id}", email=False,
+    )
 
     db.commit()
     token = _confirmation(order)
@@ -612,6 +636,10 @@ def checkout_cart(
         total_amount=totals["total"],
         shipping_method=payload.shipping_method,
         idempotency_key=payload.idempotency_key,
+        card_brand=(payload.card_brand or "").strip() or None,
+        card_last4=_last4(payload.card_last4),
+        est_delivery_from=_delivery(payload.shipping_method)[0],
+        est_delivery_to=_delivery(payload.shipping_method)[1],
         ship_name=payload.name.strip(),
         ship_phone=(payload.phone or "").strip() or None,
         ship_address=_full_address(payload.address, payload.apartment),
@@ -670,6 +698,11 @@ def checkout_cart(
         f"New order · €{totals['total']}",
         f"{payload.name.strip()} bought {n_items} item(s).",
         link_url=f"/seller/orders/{order.id}",
+    )
+    push(
+        db, buyer.id, NotificationType.ORDER, "Order confirmed 🎉",
+        f"We got your order #{short_id(order.id)} — we'll let you know as it ships.",
+        link_url=f"/orders/{order.id}", email=False,
     )
 
     db.commit()
@@ -865,6 +898,14 @@ _NEXT: dict[FulfillmentStatus, tuple[FulfillmentStatus, str] | None] = {
 }
 
 
+class CarrierOut(BaseModel):
+    id: str
+    label: str
+
+
+    return [CarrierOut(id=cid, label=spec["label"]) for cid, spec in CARRIERS.items()]
+
+
 def _shop_profile(db: Session, user: User) -> PrintShopProfile:
     p = db.scalar(select(PrintShopProfile).where(PrintShopProfile.user_id == user.id))
     if p is None:
@@ -944,8 +985,9 @@ def advance_item(
 
     before = display_status(order)
     it.fulfillment_status = nxt[0]
-    if nxt[0] == FulfillmentStatus.SHIPPED and payload.tracking_number:
-        order.tracking_number = payload.tracking_number.strip()
+    if nxt[0] == FulfillmentStatus.SHIPPED:
+        if payload.tracking_number:
+            order.tracking_number = payload.tracking_number.strip()
 
     # Quality check doesn't move the 7-status aggregate (still "In production"),
     # so it's logged on the first line entering QC rather than on a status flip.
@@ -964,13 +1006,34 @@ def advance_item(
             _notify_seller(db, order, "Order in production", "is now being produced.")
         elif after == "SHIPPED":
             order.shipped_at = now
-            note = f"Tracking: {order.tracking_number}" if order.tracking_number else None
-            _log(db, order, OrderEventType.SHIPPED, note)
+            bits = [b for b in (f"via {label}" if label else None,
+                                f"Tracking: {order.tracking_number}" if order.tracking_number else None) if b]
+            _log(db, order, OrderEventType.SHIPPED, " · ".join(bits) or None)
             _notify_seller(db, order, "Order shipped", "has been shipped.")
+            push(
+                db, order.buyer_user_id, NotificationType.ORDER, "Your order shipped 📦",
+                f"Order #{short_id(order.id)} is on its way. " + (" · ".join(bits) if bits else "It's on its way."),
+                link_url=f"/orders/{order.id}",
+            )
         elif after == "DELIVERED":
             order.delivered_at = now
             _log(db, order, OrderEventType.DELIVERED, None)
             _notify_seller(db, order, "Order delivered", "was delivered to the customer.")
+            push(
+                db, order.buyer_user_id, NotificationType.ORDER, "Your order was delivered ✅",
+                f"Order #{short_id(order.id)} was delivered — we hope you love it!",
+                link_url=f"/orders/{order.id}",
+            )
+            # Review request — now that the line is DELIVERED the buyer can review.
+            review_link = (
+                f"/p/{order.items[0].shop_item_id}#reviews" if len(order.items) == 1
+                else f"/orders/{order.id}"
+            )
+            push(
+                db, order.buyer_user_id, NotificationType.REVIEW, "How was your order? ⭐",
+                "Share a quick review to help other buyers — it only takes a minute.",
+                link_url=review_link, email=False,
+            )
 
     db.commit()
     return production_queue(db=db, user=user)

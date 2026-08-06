@@ -33,6 +33,17 @@ function luhnValid(num: string): boolean {
   return sum % 10 === 0;
 }
 
+// Brand from the card's IIN prefix — a non-sensitive display bit (brand + last4
+// are PCI-safe to keep; the full number/CVC never leave the browser).
+function cardBrand(num: string): string | null {
+  const d = num.replace(/\D/g, "");
+  if (/^4/.test(d)) return "Visa";
+  if (/^(5[1-5]|2[2-7])/.test(d)) return "Mastercard";
+  if (/^3[47]/.test(d)) return "Amex";
+  if (/^6(?:011|5)/.test(d)) return "Discover";
+  return d ? "Card" : null;
+}
+
 function expiryValid(mmYY: string): boolean {
   const m = /^(\d{2})\s*\/\s*(\d{2})$/.exec(mmYY.trim());
   if (!m) return false;
@@ -131,6 +142,8 @@ export default function Checkout() {
         discount_code: discountCode,
         shipping_method: methodId,
         idempotency_key: idemKey.current,
+        card_brand: cardBrand(cardNumber),
+        card_last4: cardNumber.replace(/\D/g, "").slice(-4) || null,
       }),
     onSuccess: (r) => {
       clearBrand(slug);

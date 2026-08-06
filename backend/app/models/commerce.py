@@ -69,6 +69,13 @@ class Order(UUIDMixin, TimestampMixin, Base):
     # retry, back-button) returns the same order instead of creating a duplicate.
     idempotency_key: Mapped[str | None] = mapped_column(String, unique=True, nullable=True)
     shipping_method: Mapped[str | None] = mapped_column(String, nullable=True)  # "standard" | "express"
+    # Non-sensitive card display only (PCI-safe): brand + last 4. The PAN/CVV/
+    # expiry never reach the server — a real gateway tokenises those.
+    card_brand: Mapped[str | None] = mapped_column(String, nullable=True)
+    card_last4: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Estimated delivery window, snapshotted at order time from the shipping method.
+    est_delivery_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    est_delivery_to: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     # ── shipping (entered at checkout; tracking added by the print shop) ─────
     ship_name: Mapped[str | None] = mapped_column(String, nullable=True)

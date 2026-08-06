@@ -8,7 +8,7 @@ never shows an empty shelf. When admin curation lands, these become the defaults
 an admin can override.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
@@ -19,6 +19,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
+from app.api.routers.orders import display_status
 from app.core.database import get_db
 from app.core.discounts import resolve_discount
 from app.core.pricing import SHIPPING_METHODS, order_totals, shipping_for
@@ -513,9 +514,11 @@ class ConfItem(BaseModel):
 class OrderConfirmation(BaseModel):
     short_id: str
     created_at: datetime
+    status: str  # derived display status — drives the "Next steps" tracker
     email: str | None
     store_name: str | None
     store_slug: str | None
+    payment_method: str | None
     items: list[ConfItem]
     ship_name: str | None
     ship_phone: str | None
@@ -525,6 +528,8 @@ class OrderConfirmation(BaseModel):
     ship_country: str | None
     shipping_method: str | None
     shipping_estimate: str | None
+    est_delivery_from: date | None
+    est_delivery_to: date | None
     subtotal: Decimal
     discount_amount: Decimal
     discount_code: str | None
@@ -549,6 +554,10 @@ def order_confirmation(token: str, db: Session = Depends(get_db)) -> OrderConfir
     store = db.get(SellerProfile, order.seller_profile_id)
     buyer = db.get(User, order.buyer_user_id)
     method_spec = SHIPPING_METHODS.get(order.shipping_method or "") if order.shipping_method else None
+    if order.card_last4:
+        payment_method = f"{order.card_brand} •• {order.card_last4}" if order.card_brand else f"Card •• {order.card_last4}"
+    else:
+        payment_method = "Card"
 
     items = []
     for it in order.items:
@@ -573,9 +582,11 @@ def order_confirmation(token: str, db: Session = Depends(get_db)) -> OrderConfir
     return OrderConfirmation(
         short_id=order.id.hex[:8].upper(),
         created_at=order.created_at,
+        status=display_status(order),
         email=buyer.email if buyer else None,
         store_name=store.store_name if store else None,
         store_slug=store.slug if store else None,
+        payment_method=payment_method,
         items=items,
         ship_name=order.ship_name,
         ship_phone=order.ship_phone,
@@ -585,6 +596,8 @@ def order_confirmation(token: str, db: Session = Depends(get_db)) -> OrderConfir
         ship_country=order.ship_country,
         shipping_method=method_spec["label"] if method_spec else (order.shipping_method or None),
         shipping_estimate=method_spec["estimate"] if method_spec else None,
+        est_delivery_from=order.est_delivery_from,
+        est_delivery_to=order.est_delivery_to,
         subtotal=order.subtotal,
         discount_amount=order.discount_amount,
         discount_code=order.discount_code,
@@ -593,6 +606,8 @@ def order_confirmation(token: str, db: Session = Depends(get_db)) -> OrderConfir
         total=order.total_amount,
     )
 
+
+# ── wishlist cards (saved products, with live availability) ───────────────────
 
 def _related(db: Session, item: ShopItem, base: BaseItem | None) -> list[ProductCard]:
     """Other products from the same brand, then similar products (same category)

@@ -149,6 +149,9 @@ export interface CartCheckoutPayload {
   apartment?: string | null;
   shipping_method?: string;
   idempotency_key?: string;
+  /** Non-sensitive card display only (PCI-safe) — never the full number/CVC. */
+  card_brand?: string | null;
+  card_last4?: string | null;
 }
 
 /** Check out one brand's cart lines as a single multi-line order. */

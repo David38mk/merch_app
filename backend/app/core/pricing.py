@@ -5,6 +5,7 @@ draft product's price), so the break-even rule lives in exactly one place.
 """
 
 import math
+from datetime import date, timedelta
 from decimal import Decimal
 
 from app.core.config import settings
@@ -37,18 +38,40 @@ SHIPPING_METHODS: dict[str, dict] = {
     "standard": {
         "label": "Standard",
         "estimate": "5–7 business days",
+        "days": (5, 7),  # business-day window, drives the delivery estimate
         "cost": lambda: Decimal(settings.SHIPPING_FLAT),
         "free_over": lambda: Decimal(settings.FREE_SHIPPING_OVER),
     },
     "express": {
         "label": "Express",
         "estimate": "2–3 business days",
+        "days": (2, 3),
         "cost": lambda: Decimal("12.99"),
         "free_over": lambda: None,
     },
 }
 
 DEFAULT_METHOD = "standard"
+
+
+def _add_business_days(start: date, n: int) -> date:
+    """Advance `n` business days from `start` (skips Sat/Sun). Print-on-demand
+    ships from the provider, so weekends don't count toward the estimate."""
+    d = start
+    added = 0
+    while added < n:
+        d += timedelta(days=1)
+        if d.weekday() < 5:  # Mon–Fri
+            added += 1
+    return d
+
+
+def delivery_window(placed_on: date, method: str = DEFAULT_METHOD) -> tuple[date, date]:
+    """The (earliest, latest) delivery date for a method, snapshotted at order
+    time so the buyer's confirmation, email and history all show the same dates."""
+    spec = SHIPPING_METHODS.get(method) or SHIPPING_METHODS[DEFAULT_METHOD]
+    lo, hi = spec["days"]
+    return _add_business_days(placed_on, lo), _add_business_days(placed_on, hi)
 
 
 def shipping_for(subtotal: Decimal, method: str = DEFAULT_METHOD) -> Decimal:
