@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, MapPin, Store, Truck } from "lucide-react";
+import type { ReactNode } from "react";
+import { ArrowLeft, CalendarClock, ExternalLink, Loader2, MapPin, Store, Truck } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 
 import { getBuyerOrder } from "../../../api/buyerOrders";
@@ -34,6 +35,12 @@ export default function BuyerOrderDetail() {
     .filter(Boolean)
     .join(", ");
 
+  // Delivery headline: the real date once delivered, else the snapshotted window.
+  const delivered = order.status === "DELIVERED" ? order.delivered_at : null;
+  const estWindow = deliveryText(order.est_delivery_from, order.est_delivery_to);
+  const deliveryLabel = delivered ? "Delivered" : "Estimated delivery";
+  const deliveryValue = delivered ? fmtDate(delivered) : estWindow ?? "—";
+
   return (
     <div>
       <Link
@@ -49,16 +56,31 @@ export default function BuyerOrderDetail() {
         actions={<Badge tone={st.tone}>{st.label}</Badge>}
       />
 
-      {/* Tracking banner — the buyer's headline question is "where is it?" */}
-      {order.tracking_number && (
-        <Card className="mb-6 flex items-center gap-3 p-4">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
-            <Truck className="h-5 w-5" />
-          </span>
-          <div>
-            <p className="text-sm font-medium text-slate-900">Tracking number</p>
-            <p className="font-mono text-sm text-slate-600">{order.tracking_number}</p>
+      {/* At-a-glance tracking headline — "where is it?" answered up top. */}
+      {active && (
+        <Card className="mb-6 p-5">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Glance icon={CalendarClock} label={deliveryLabel} value={deliveryValue} />
+            <Glance icon={Truck} label="Status" value={st.label} />
+            <Glance
+              icon={MapPin}
+              label="Shipping method"
+              value={order.shipping_method ?? "—"}
+            />
           </div>
+          {order.tracking_url && (
+            <div className="mt-4 border-t border-slate-100 pt-4">
+              <a
+                href={order.tracking_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-700 hover:underline"
+              >
+                Track shipment with {order.shipping_carrier ?? "carrier"}
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            </div>
+          )}
         </Card>
       )}
 
@@ -187,14 +209,78 @@ export default function BuyerOrderDetail() {
           )}
 
           <Card className="p-5">
-            <h2 className="mb-2 flex items-center gap-2 font-semibold text-slate-900">
-              <MapPin className="h-4 w-4 text-slate-400" /> Shipping to
+            <h2 className="mb-3 flex items-center gap-2 font-semibold text-slate-900">
+              <Truck className="h-4 w-4 text-slate-400" /> Shipping details
             </h2>
-            <p className="text-sm text-slate-600">{order.ship_name}</p>
-            <p className="text-sm text-slate-500">{ship || "—"}</p>
+            <dl className="space-y-2 text-sm">
+              {order.shipping_method && <Detail label="Method" value={order.shipping_method} />}
+              {!delivered && estWindow && <Detail label="Estimated delivery" value={estWindow} />}
+              {delivered && <Detail label="Delivered" value={fmtDate(delivered)} />}
+              {order.shipping_carrier && <Detail label="Carrier" value={order.shipping_carrier} />}
+              {order.tracking_number && (
+                <Detail label="Tracking #" value={<span className="font-mono">{order.tracking_number}</span>} />
+              )}
+              {order.tracking_url && (
+                <div>
+                  <a
+                    href={order.tracking_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-brand-700 hover:underline"
+                  >
+                    Tracking link <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                </div>
+              )}
+            </dl>
+            <div className="mt-4 border-t border-slate-100 pt-3">
+              <p className="mb-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-400">
+                <MapPin className="h-3.5 w-3.5" /> Delivery address
+              </p>
+              <p className="text-sm text-slate-600">{order.ship_name}</p>
+              <p className="text-sm text-slate-500">{ship || "—"}</p>
+            </div>
           </Card>
         </div>
       </div>
+    </div>
+  );
+}
+
+const fmtDate = (iso: string) =>
+  new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+
+function deliveryText(from: string | null, to: string | null): string | null {
+  if (!from || !to) return null;
+  const f = new Date(from);
+  const t = new Date(to);
+  const fromStr = f.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const toStr = t.toLocaleDateString(
+    undefined,
+    f.getMonth() === t.getMonth() ? { day: "numeric" } : { month: "short", day: "numeric" },
+  );
+  return `${fromStr}–${toStr}`;
+}
+
+function Glance({ icon: Icon, label, value }: { icon: typeof Truck; label: string; value: string }) {
+  return (
+    <div className="flex items-start gap-3">
+      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+        <Icon className="h-4 w-4" />
+      </span>
+      <div className="min-w-0">
+        <p className="text-xs text-slate-400">{label}</p>
+        <p className="truncate text-sm font-semibold text-slate-800">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+function Detail({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <dt className="text-slate-500">{label}</dt>
+      <dd className="text-right text-slate-800">{value}</dd>
     </div>
   );
 }

@@ -55,7 +55,13 @@ export interface BuyerOrderDetail {
   ship_city: string | null;
   ship_postal: string | null;
   ship_country: string | null;
+  shipping_carrier: string | null;
   tracking_number: string | null;
+  tracking_url: string | null;
+  shipping_method: string | null;
+  est_delivery_from: string | null;
+  est_delivery_to: string | null;
+  delivered_at: string | null;
   items: BuyerOrderItem[];
   events: BuyerOrderEvent[];
 }

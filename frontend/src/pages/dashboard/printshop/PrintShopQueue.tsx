@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Factory, Inbox, Loader2, Package, Truck, X } from "lucide-react";
 import { useState } from "react";
 
-import { advanceProduction, getProductionQueue, type QueueItem } from "../../../api/orders";
+import { advanceProduction, getCarriers, getProductionQueue, type QueueItem } from "../../../api/orders";
 import { DesignPreviewThumb } from "../../../components/design/DesignPreviewThumb";
 import { Badge } from "../../../components/ui/Badge";
 import { Button } from "../../../components/ui/Button";
@@ -25,19 +25,21 @@ const STATUS_META: Record<string, { label: string; tone: Tone }> = {
 export default function PrintShopQueue() {
   const qc = useQueryClient();
   const [error, setError] = useState<string | null>(null);
-  // Marking shipped needs a tracking number — collected in a tiny dialog.
+  // Marking shipped needs a carrier + tracking number — collected in a tiny dialog.
   const [shipping, setShipping] = useState<QueueItem | null>(null);
   const [tracking, setTracking] = useState("");
+  const [carrier, setCarrier] = useState("dhl");
 
   const { data, isLoading } = useQuery({
     queryKey: ["production-queue"],
     queryFn: getProductionQueue,
     refetchInterval: 20000, // new paid orders appear without a manual refresh
   });
+  const { data: carriers } = useQuery({ queryKey: ["carriers"], queryFn: getCarriers });
 
   const advance = useMutation({
-    mutationFn: ({ id, trackingNumber }: { id: string; trackingNumber?: string }) =>
-      advanceProduction(id, trackingNumber),
+    mutationFn: ({ id, trackingNumber, carrierId }: { id: string; trackingNumber?: string; carrierId?: string }) =>
+      advanceProduction(id, trackingNumber, carrierId),
     onSuccess: (q) => {
       qc.setQueryData(["production-queue"], q);
       setShipping(null);
@@ -145,7 +147,15 @@ export default function PrintShopQueue() {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <label className="label mt-4">Tracking number</label>
+            <label className="label mt-4">Carrier</label>
+            <select className="input" value={carrier} onChange={(e) => setCarrier(e.target.value)}>
+              {(carriers ?? []).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+            <label className="label mt-3">Tracking number</label>
             <input
               className="input"
               value={tracking}
@@ -154,14 +164,20 @@ export default function PrintShopQueue() {
               autoFocus
             />
             <p className="mt-1.5 text-xs text-slate-400">
-              The seller (and later the buyer) sees this on the order. 🔌 Carrier integration comes later.
+              The seller and the buyer see the carrier + tracking number (and a live tracking link) on the order.
             </p>
             <div className="mt-5 flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setShipping(null)}>
                 Cancel
               </Button>
               <Button
-                onClick={() => advance.mutate({ id: shipping.id, trackingNumber: tracking.trim() || undefined })}
+                onClick={() =>
+                  advance.mutate({
+                    id: shipping.id,
+                    trackingNumber: tracking.trim() || undefined,
+                    carrierId: carrier || undefined,
+                  })
+                }
                 disabled={advance.isPending}
               >
                 {advance.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Truck className="h-4 w-4" />}

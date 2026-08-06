@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_optional_user, require_role
+from app.core.carriers import CARRIERS, carrier_label, tracking_url
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.discounts import resolve_discount
@@ -260,6 +261,7 @@ class QueueOut(BaseModel):
 
 class AdvanceIn(BaseModel):
     tracking_number: str | None = None
+    carrier: str | None = None  # carrier id (see core.carriers), set when marking shipped
 
 
 # ── buyer-facing order schemas (no seller economics) ──────────────────────────
@@ -301,7 +303,14 @@ class BuyerOrderDetail(BaseModel):
     ship_city: str | None
     ship_postal: str | None
     ship_country: str | None
+    # ── tracking ──
+    shipping_carrier: str | None       # human label, e.g. "DHL"
     tracking_number: str | None
+    tracking_url: str | None           # public "track with carrier" deep link
+    shipping_method: str | None        # "Standard" / "Express" label
+    est_delivery_from: date | None
+    est_delivery_to: date | None
+    delivered_at: datetime | None
     items: list[OrderItemOut]
     events: list[EventOut]
 
@@ -903,6 +912,9 @@ class CarrierOut(BaseModel):
     label: str
 
 
+@production.get("/carriers", response_model=list[CarrierOut])
+def carriers() -> list[CarrierOut]:
+    """The carrier list the print shop picks from when marking an order shipped."""
     return [CarrierOut(id=cid, label=spec["label"]) for cid, spec in CARRIERS.items()]
 
 
@@ -988,6 +1000,8 @@ def advance_item(
     if nxt[0] == FulfillmentStatus.SHIPPED:
         if payload.tracking_number:
             order.tracking_number = payload.tracking_number.strip()
+        if payload.carrier:
+            order.shipping_carrier = payload.carrier.strip() or None
 
     # Quality check doesn't move the 7-status aggregate (still "In production"),
     # so it's logged on the first line entering QC rather than on a status flip.
@@ -1006,6 +1020,7 @@ def advance_item(
             _notify_seller(db, order, "Order in production", "is now being produced.")
         elif after == "SHIPPED":
             order.shipped_at = now
+            label = carrier_label(order.shipping_carrier)
             bits = [b for b in (f"via {label}" if label else None,
                                 f"Tracking: {order.tracking_number}" if order.tracking_number else None) if b]
             _log(db, order, OrderEventType.SHIPPED, " · ".join(bits) or None)
@@ -1120,6 +1135,7 @@ def buyer_order(
     if order is None or order.buyer_user_id != user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
     store = _store_of(db, order)
+    method_spec = SHIPPING_METHODS.get(order.shipping_method or "") if order.shipping_method else None
     return BuyerOrderDetail(
         id=order.id,
         short_id=short_id(order.id),
@@ -1138,7 +1154,13 @@ def buyer_order(
         ship_city=order.ship_city,
         ship_postal=order.ship_postal,
         ship_country=order.ship_country,
+        shipping_carrier=carrier_label(order.shipping_carrier),
         tracking_number=order.tracking_number,
+        tracking_url=tracking_url(order.shipping_carrier, order.tracking_number),
+        shipping_method=method_spec["label"] if method_spec else (order.shipping_method or None),
+        est_delivery_from=order.est_delivery_from,
+        est_delivery_to=order.est_delivery_to,
+        delivered_at=order.delivered_at,
         items=[_item_out(db, i) for i in order.items],
         events=[EventOut(type=e.type.value, note=e.note, created_at=e.created_at) for e in order.events],
     )

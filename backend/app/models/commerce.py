@@ -84,6 +84,7 @@ class Order(UUIDMixin, TimestampMixin, Base):
     ship_city: Mapped[str | None] = mapped_column(String, nullable=True)
     ship_postal: Mapped[str | None] = mapped_column(String, nullable=True)
     ship_country: Mapped[str | None] = mapped_column(String, nullable=True)
+    shipping_carrier: Mapped[str | None] = mapped_column(String, nullable=True)  # carrier id (see core.carriers)
     tracking_number: Mapped[str | None] = mapped_column(String, nullable=True)  # 🔌 cargo seam
     shipped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

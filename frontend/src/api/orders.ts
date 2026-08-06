@@ -180,10 +180,24 @@ export async function getProductionQueue(): Promise<QueueOut> {
   return (await api.get<QueueOut>("/production/queue")).data;
 }
 
-export async function advanceProduction(itemId: string, trackingNumber?: string): Promise<QueueOut> {
+export interface Carrier {
+  id: string;
+  label: string;
+}
+
+export async function getCarriers(): Promise<Carrier[]> {
+  return (await api.get<Carrier[]>("/production/carriers")).data;
+}
+
+export async function advanceProduction(
+  itemId: string,
+  trackingNumber?: string,
+  carrier?: string,
+): Promise<QueueOut> {
   return (
     await api.post<QueueOut>(`/production/items/${itemId}/advance`, {
       tracking_number: trackingNumber || null,
+      carrier: carrier || null,
     })
   ).data;
 }
