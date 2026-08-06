@@ -124,6 +124,8 @@ export interface ProductDetail {
   materials: string[];
   print_methods: string[];
   production_time: string | null;
+  rating_average: number | null;
+  rating_count: number;
   related: ProductCard[];
 }
 
@@ -175,9 +177,11 @@ export interface ConfirmationItem {
 export interface OrderConfirmation {
   short_id: string;
   created_at: string;
+  status: string;
   email: string | null;
   store_name: string | null;
   store_slug: string | null;
+  payment_method: string | null;
   items: ConfirmationItem[];
   ship_name: string | null;
   ship_phone: string | null;
@@ -187,6 +191,8 @@ export interface OrderConfirmation {
   ship_country: string | null;
   shipping_method: string | null;
   shipping_estimate: string | null;
+  est_delivery_from: string | null;
+  est_delivery_to: string | null;
   subtotal: string;
   discount_amount: string;
   discount_code: string | null;

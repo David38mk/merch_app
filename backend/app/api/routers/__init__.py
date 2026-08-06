@@ -15,6 +15,7 @@ from app.api.routers import (
     onboarding,
     orders,
     public_store,
+    reviews,
     seller_dashboard,
     shop_items,
     storefront,
@@ -41,6 +42,7 @@ api_router.include_router(designers.router)
 api_router.include_router(designers.public_router)
 api_router.include_router(collaborations.router)
 api_router.include_router(wishlist.router)
+api_router.include_router(reviews.router)
 for r in orders.routers:
     api_router.include_router(r)
 for stub in stubs.routers:

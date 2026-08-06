@@ -161,6 +161,14 @@ class OrderEventType(str, enum.Enum):
     REFUNDED = "REFUNDED"
 
 
+class ReviewStatus(str, enum.Enum):
+    """Product-review moderation state. Reviews auto-publish and are hidden
+    reactively (report threshold, or a future admin action)."""
+
+    PUBLISHED = "PUBLISHED"
+    HIDDEN = "HIDDEN"
+
+
 class NotificationType(str, enum.Enum):
     SALE = "SALE"  # a new sale happened
     ORDER = "ORDER"  # an existing order progressed (production/shipped/delivered)
@@ -170,7 +178,7 @@ class NotificationType(str, enum.Enum):
     COLLAB_UPDATE = "COLLAB_UPDATE"
     NEW_PRODUCTION_ORDER = "NEW_PRODUCTION_ORDER"
     ANNOUNCEMENT = "ANNOUNCEMENT"  # platform announcements
-    REVIEW = "REVIEW"  # ⏭️ product reviews, once buyers can leave them
+    REVIEW = "REVIEW"  # review requests / product-review activity
     SYSTEM = "SYSTEM"
 
 

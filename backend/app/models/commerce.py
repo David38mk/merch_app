@@ -16,7 +16,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
-from app.models.enums import DiscountKind, FulfillmentStatus, OrderEventType, OrderStatus
+from app.models.enums import DiscountKind, FulfillmentStatus, OrderEventType, OrderStatus, ReviewStatus
 
 
 class Cart(UUIDMixin, TimestampMixin, Base):
@@ -152,6 +152,56 @@ class OrderEvent(UUIDMixin, TimestampMixin, Base):
     note: Mapped[str | None] = mapped_column(String, nullable=True)
 
     order: Mapped["Order"] = relationship(back_populates="events")
+
+
+class ProductReview(UUIDMixin, TimestampMixin, Base):
+    """A verified-purchase rating + review for a product. One per (buyer,
+    product). Auto-publishes; `status` flips to HIDDEN on report threshold or a
+    future admin action. `reviewer_name` is a display snapshot so the card
+    renders even if the account is later renamed."""
+
+    __tablename__ = "product_reviews"
+    __table_args__ = (UniqueConstraint("buyer_user_id", "shop_item_id", name="uq_review_one_per_product"),)
+
+    shop_item_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("shop_items.id", ondelete="CASCADE"), index=True
+    )
+    buyer_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    # The delivered order that verified this purchase (audit trail).
+    order_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("orders.id", ondelete="SET NULL"), nullable=True)
+    reviewer_name: Mapped[str] = mapped_column(String)
+    rating: Mapped[int] = mapped_column(Integer)  # 1–5
+    title: Mapped[str] = mapped_column(String)
+    body: Mapped[str] = mapped_column(String)
+    status: Mapped[ReviewStatus] = mapped_column(SAEnum(ReviewStatus), default=ReviewStatus.PUBLISHED)
+    report_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+    photos: Mapped[list["ReviewPhoto"]] = relationship(
+        back_populates="review", cascade="all, delete-orphan", order_by="ReviewPhoto.created_at"
+    )
+
+
+class ReviewPhoto(UUIDMixin, TimestampMixin, Base):
+    """A customer photo attached to a review (🔌 storage seam)."""
+
+    __tablename__ = "review_photos"
+
+    review_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("product_reviews.id", ondelete="CASCADE"))
+    url: Mapped[str] = mapped_column(String)
+
+    review: Mapped["ProductReview"] = relationship(back_populates="photos")
+
+
+class ReviewReport(UUIDMixin, TimestampMixin, Base):
+    """A report against a review. One per (review, reporter); the count drives
+    auto-hide and, later, an admin moderation queue."""
+
+    __tablename__ = "review_reports"
+    __table_args__ = (UniqueConstraint("review_id", "reporter_user_id", name="uq_review_report"),)
+
+    review_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("product_reviews.id", ondelete="CASCADE"))
+    reporter_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    reason: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class WishlistItem(UUIDMixin, TimestampMixin, Base):

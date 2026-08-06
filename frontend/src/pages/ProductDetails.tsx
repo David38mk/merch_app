@@ -20,6 +20,8 @@ import { useCart } from "../cart";
 import { useWishlist } from "../wishlist";
 import { DesignPreviewThumb } from "../components/design/DesignPreviewThumb";
 import { ProductTile } from "../components/marketplace/ProductTile";
+import { ReviewsSection } from "../components/reviews/ReviewsSection";
+import { Stars } from "../components/reviews/Stars";
 import { BuyNowModal } from "../components/storefront/BuyNowModal";
 import { Button } from "../components/ui/Button";
 import { cn } from "../lib/cn";
@@ -172,7 +174,6 @@ export default function ProductDetails() {
           >
             <Store className="h-4 w-4" /> {p.brand.name}
           </Link>
-          <h1 className="mt-1.5 text-2xl font-bold text-slate-900">{p.name}</h1>
           <div className="mt-1.5 flex items-start justify-between gap-3">
             <h1 className="text-2xl font-bold text-slate-900">{p.name}</h1>
             <button
@@ -323,6 +324,11 @@ export default function ProductDetails() {
             <Info icon={Lock} label="Secure checkout">Payments are processed securely (test mode in this build).</Info>
           </div>
         </div>
+      </div>
+
+      {/* ── Reviews ─────────────────────────────────────────── */}
+      <div id="reviews">
+        <ReviewsSection productId={p.id} />
       </div>
 
       {/* ── Related ─────────────────────────────────────────── */}

@@ -20,6 +20,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from app.api.routers.orders import display_status
+from app.api.routers.reviews import product_rating
 from app.core.database import get_db
 from app.core.discounts import resolve_discount
 from app.core.pricing import SHIPPING_METHODS, order_totals, shipping_for
@@ -389,6 +390,8 @@ class ProductDetail(BaseModel):
     materials: list[str]
     print_methods: list[str]
     production_time: str | None
+    rating_average: float | None
+    rating_count: int
     related: list[ProductCard]
 
 
@@ -420,6 +423,7 @@ def product_detail(product_id: str, db: Session = Depends(get_db)) -> ProductDet
     materials = [o.name for o in (base.print_options if base else []) if o.kind == PrintOptionKind.MATERIAL]
     methods = [o.name for o in (base.print_options if base else []) if o.kind == PrintOptionKind.PRINT_TYPE]
     design = db.get(Design, item.design_id) if item.design_id else None
+    _rating = product_rating(db, item.id)
 
     return ProductDetail(
         id=str(item.id),
@@ -437,6 +441,8 @@ def product_detail(product_id: str, db: Session = Depends(get_db)) -> ProductDet
         materials=materials or ([item.material] if item.material else []),
         print_methods=methods or ([item.print_type] if item.print_type else []),
         production_time=base.production_time if base else None,
+        rating_average=_rating[0],
+        rating_count=_rating[1],
         related=_related(db, item, base),
     )
 
