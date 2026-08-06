@@ -29,6 +29,22 @@ export function Privacy() {
   );
 }
 
+export function DesignerAgreement() {
+  return (
+    <LegalShell title="Designer Agreement">
+      <p>
+        This is a preview build of MyHappinessClub. By joining as a designer you agree to deliver
+        original work you have the rights to, to collaborate with brands in good faith, and to the
+        platform's commission on paid design opportunities.
+      </p>
+      <p>
+        You keep authorship of your portfolio; brands license the specific work they commission. The
+        full Designer Agreement will be published before general availability.
+      </p>
+    </LegalShell>
+  );
+}
+
 function LegalShell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-slate-50">

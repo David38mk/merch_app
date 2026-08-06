@@ -20,7 +20,7 @@ from app.core.security import (
     verify_password,
 )
 from app.models.enums import Role
-from app.models.user import Settings, User, UserRole
+from app.models.user import DesignerProfile, Settings, User, UserRole
 from app.schemas.auth import (
     ForgotPasswordRequest,
     ForgotPasswordResponse,
@@ -40,8 +40,32 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 def _roles_for(intent: str) -> tuple[Role, ...]:
-    """Buyer signup → a pure Buyer; seller signup → Buyer + Seller."""
-    return (Role.BUYER,) if intent == "buyer" else (Role.BUYER, Role.SELLER)
+    """Buyer signup → a pure Buyer; seller → Buyer+Seller; designer → Buyer+Designer."""
+    if intent == "buyer":
+        return (Role.BUYER,)
+    if intent == "designer":
+        return (Role.BUYER, Role.DESIGNER)
+    return (Role.BUYER, Role.SELLER)
+
+
+def _ensure_designer(db: Session, user: User, now: datetime) -> None:
+    """Record Designer Agreement acceptance and give the user a Designer role +
+    profile so the Designer Platform works right after signup. Idempotent."""
+    from app.api.routers.designers import unique_designer_slug  # lazy: avoid import cycle
+
+    if user.designer_agreement_at is None:
+        user.designer_agreement_at = now
+    if Role.DESIGNER not in {ur.role for ur in user.roles}:
+        user.roles.append(UserRole(role=Role.DESIGNER))
+    if db.scalar(select(DesignerProfile).where(DesignerProfile.user_id == user.id)) is None:
+        db.add(
+            DesignerProfile(
+                user_id=user.id,
+                slug=unique_designer_slug(db, user.display_name or "designer"),
+                display_name=user.display_name or "Designer",
+                avatar_url=user.avatar_url,
+            )
+        )
 
 
 def _account(roles: tuple[Role, ...], **kwargs) -> User:
@@ -106,6 +130,8 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> Token:
         if existing.settings is None:
             existing.settings = Settings(email_verified=False)
         db.flush()
+        if payload.intent == "designer":
+            _ensure_designer(db, existing, now)
         seed_welcome(db, existing)  # a guest had no welcome notifications
         db.commit()
         db.refresh(existing)
@@ -128,6 +154,8 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> Token:
     user.settings = Settings(email_verified=False)
     db.add(user)
     db.flush()  # assign user.id so we can attach notifications in the same transaction
+    if payload.intent == "designer":
+        _ensure_designer(db, user, now)
     seed_welcome(db, user)
     try:
         db.commit()
@@ -219,6 +247,12 @@ def google_login(payload: GoogleAuthRequest, db: Session = Depends(get_db)) -> T
             user.roles.append(UserRole(role=Role.BUYER))
         db.flush()
         seed_welcome(db, user)
+        db.commit()
+        db.refresh(user)
+
+    # Designer signup via Google — grant the role + profile + agreement (idempotent).
+    if payload.intent == "designer":
+        _ensure_designer(db, user, datetime.now(timezone.utc))
         db.commit()
         db.refresh(user)
 

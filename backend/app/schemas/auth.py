@@ -1,7 +1,7 @@
 import uuid
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from app.core.security import validate_password_strength
 from app.models.enums import Role
@@ -24,18 +24,26 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
     # "buyer" → a pure Buyer account (shop + track orders). "seller" → Buyer+Seller
-    # and the storefront onboarding. Defaults to seller for the existing seller signup.
-    intent: Literal["buyer", "seller"] = "seller"
+    # and the storefront onboarding. "designer" → Buyer+Designer and the Designer
+    # Platform. Defaults to seller for the existing seller signup.
+    intent: Literal["buyer", "seller", "designer"] = "seller"
     accept_terms: bool = False
+    accept_designer_agreement: bool = False  # required only for designer signups
 
     _pw = field_validator("password")(_check_password)
     _terms = field_validator("accept_terms")(_check_terms)
+
+    @model_validator(mode="after")
+    def _designer_agreement(self) -> "RegisterRequest":
+        if self.intent == "designer" and not self.accept_designer_agreement:
+            raise ValueError("You must accept the Designer Agreement.")
+        return self
 
 
 class GoogleAuthRequest(BaseModel):
     credential: str  # the Google ID token returned by Google Identity Services
     remember: bool = False
-    intent: Literal["buyer", "seller"] = "seller"
+    intent: Literal["buyer", "seller", "designer"] = "seller"
 
 
 class ForgotPasswordRequest(BaseModel):

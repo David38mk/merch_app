@@ -18,7 +18,7 @@ export interface TokenResponse {
   email_verification_required: boolean;
 }
 
-export type AuthIntent = "buyer" | "seller";
+export type AuthIntent = "buyer" | "seller" | "designer";
 
 export interface RegisterInput {
   first_name: string;
@@ -27,6 +27,7 @@ export interface RegisterInput {
   password: string;
   intent: AuthIntent;
   accept_terms: boolean;
+  accept_designer_agreement?: boolean;
 }
 
 export async function registerAccount(input: RegisterInput): Promise<TokenResponse> {

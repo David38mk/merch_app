@@ -37,6 +37,8 @@ class User(UUIDMixin, TimestampMixin, Base):
     # When the user accepted Terms & Privacy. Null for guest (passwordless) accounts
     # created at checkout — they never went through signup.
     accepted_terms_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Separate consent to the Designer Agreement, recorded on designer signup.
+    designer_agreement_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     roles: Mapped[list["UserRole"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     seller_profile: Mapped["SellerProfile | None"] = relationship(back_populates="user", uselist=False)

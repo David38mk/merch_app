@@ -4,9 +4,10 @@ import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./auth";
 import { DashboardLayout } from "./components/layout/DashboardLayout";
 import { PublicLayout } from "./components/layout/PublicLayout";
+import DesignerSignup from "./pages/DesignerSignup";
 import ForgotPassword from "./pages/ForgotPassword";
 import Landing from "./pages/Landing";
-import { Privacy, Terms } from "./pages/Legal";
+import { DesignerAgreement, Privacy, Terms } from "./pages/Legal";
 import Cart from "./pages/Cart";
 import Checkout from "./pages/Checkout";
 import Wishlist from "./pages/Wishlist";
@@ -104,8 +105,17 @@ export default function App() {
             </GuestOnly>
           }
         />
+        <Route
+          path="/join-as-designer"
+          element={
+            <GuestOnly>
+              <DesignerSignup />
+            </GuestOnly>
+          }
+        />
         <Route path="/terms" element={<Terms />} />
         <Route path="/privacy" element={<Privacy />} />
+        <Route path="/designer-agreement" element={<DesignerAgreement />} />
         <Route
           path="/forgot-password"
           element={

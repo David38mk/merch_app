@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Loader2, Sparkles, Store } from "lucide-react";
+import { ArrowRight, Loader2, Palette, Sparkles, Store } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { getMarketplaceHome, type BrandCard } from "../api/marketplace";
@@ -162,6 +162,23 @@ export default function Landing() {
           <Link to="/sell">
             <Button>
               <Store className="h-4 w-4" /> Start selling
+            </Button>
+          </Link>
+        </div>
+      </section>
+
+      {/* ── Designer CTA strip ───────────────────────────────── */}
+      <section className="border-t border-slate-200 bg-slate-900">
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 py-12 sm:flex-row">
+          <div>
+            <h2 className="text-lg font-bold text-white">Are you a designer?</h2>
+            <p className="text-sm text-slate-300">
+              Find paid opportunities, collaborate with brands, and build your reputation.
+            </p>
+          </div>
+          <Link to="/join-as-designer">
+            <Button variant="outline" className="border-white/30 bg-white text-slate-900 hover:bg-slate-100">
+              <Palette className="h-4 w-4" /> Become a designer
             </Button>
           </Link>
         </div>
