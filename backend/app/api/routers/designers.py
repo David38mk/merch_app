@@ -4,6 +4,7 @@ so they can apply to job calls."""
 import re
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field, field_validator
@@ -14,14 +15,16 @@ from app.api.deps import get_current_user
 from app.core.config import settings as app_settings
 from app.core.database import get_db
 from app.core.designer_stats import completed_counts, rating_stats, response_hours
+from app.core.earnings import compute_earnings
 from app.models.design import Design
-from app.models.enums import Role
+from app.models.enums import PayoutStatus, Role
 from app.models.hiring import DesignerReview
 from app.models.user import (
     DesignerPortfolioItem,
     DesignerProfile,
     DesignerProject,
     DesignerProjectImage,
+    Payout,
     User,
     UserRole,
 )
@@ -558,6 +561,113 @@ def reorder_project_images(
     db.commit()
     db.refresh(pr)
     return _project_out(pr)
+
+
+# ── earnings + payouts ────────────────────────────────────────────────────────
+
+MIN_PAYOUT = Decimal("50")
+DEFAULT_PAYOUT_METHOD = "Bank transfer"
+
+
+class ProjectEarningOut(BaseModel):
+    collaboration_id: str
+    seller: str
+    product: str | None
+    payment_type: str
+    amount_earned: Decimal
+    available: Decimal
+    pending: Decimal
+    status: str
+
+
+class PayoutOut(BaseModel):
+    id: uuid.UUID
+    amount: Decimal
+    status: PayoutStatus
+    method: str
+    created_at: datetime
+    paid_at: datetime | None
+
+
+class EarningsOut(BaseModel):
+    total_earnings: Decimal
+    available_balance: Decimal
+    pending_balance: Decimal
+    lifetime_revenue: Decimal
+    withdrawn: Decimal
+    min_payout: Decimal
+    projects: list[ProjectEarningOut]
+    payouts: list[PayoutOut]
+
+
+class WithdrawIn(BaseModel):
+    amount: Decimal | None = None  # defaults to the full available balance
+    method: str | None = None
+
+
+def _payout_out(p: Payout) -> PayoutOut:
+    return PayoutOut(
+        id=p.id, amount=p.amount, status=p.status, method=p.method,
+        created_at=p.created_at, paid_at=p.paid_at,
+    )
+
+
+def _earnings_out(db: Session, profile: DesignerProfile) -> EarningsOut:
+    s = compute_earnings(db, profile.id)
+    payouts = db.scalars(
+        select(Payout)
+        .where(Payout.designer_profile_id == profile.id)
+        .order_by(Payout.created_at.desc())
+    ).all()
+    return EarningsOut(
+        total_earnings=s.total_earnings,
+        available_balance=s.available_balance,
+        pending_balance=s.pending_balance,
+        lifetime_revenue=s.lifetime_revenue,
+        withdrawn=s.withdrawn,
+        min_payout=MIN_PAYOUT,
+        projects=[ProjectEarningOut(**vars(p)) for p in s.projects],
+        payouts=[_payout_out(p) for p in payouts],
+    )
+
+
+@router.get("/earnings", response_model=EarningsOut)
+def get_earnings(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> EarningsOut:
+    """Earnings overview + per-project breakdown + payout history."""
+    return _earnings_out(db, _my_profile(db, user))
+
+
+@router.post("/payouts", response_model=EarningsOut, status_code=status.HTTP_201_CREATED)
+def request_payout(
+    payload: WithdrawIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> EarningsOut:
+    """Request a withdrawal against the available balance. The payout provider is
+    a stub seam, so the payout is recorded as PROCESSING and immediately reserves
+    the amount (available balance drops)."""
+    profile = _my_profile(db, user)
+    s = compute_earnings(db, profile.id)
+    amount = (payload.amount if payload.amount is not None else s.available_balance).quantize(Decimal("0.01"))
+
+    if amount <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Enter an amount to withdraw.")
+    if amount < MIN_PAYOUT:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"The minimum withdrawal is €{MIN_PAYOUT:.0f}.")
+    if amount > s.available_balance:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Amount exceeds your available balance.")
+
+    db.add(Payout(
+        designer_profile_id=profile.id,
+        amount=amount,
+        status=PayoutStatus.PROCESSING,  # 🔌 real provider settles this to PAID
+        method=(payload.method or "").strip() or DEFAULT_PAYOUT_METHOD,
+    ))
+    db.commit()
+    return _earnings_out(db, profile)
 
 
 # ── public profile (portfolio + reviews) ─────────────────────────────────────────

@@ -93,6 +93,16 @@ class BidStatus(str, enum.Enum):
     WITHDRAWN = "WITHDRAWN"
 
 
+class PayoutStatus(str, enum.Enum):
+    """A designer withdrawal's lifecycle. The provider is a stub seam, so a
+    requested payout sits in PROCESSING until a real payout provider settles it."""
+
+    REQUESTED = "REQUESTED"
+    PROCESSING = "PROCESSING"
+    PAID = "PAID"
+    FAILED = "FAILED"
+
+
 class CollabState(str, enum.Enum):
     PENDING = "PENDING"
     PREVIEW = "PREVIEW"

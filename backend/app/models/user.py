@@ -1,5 +1,6 @@
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     JSON,
@@ -8,13 +9,14 @@ from sqlalchemy import (
     Enum as SAEnum,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
-from app.models.enums import AccountType, AddressType, PlanCode, Role, SocialPlatform, StoreState
+from app.models.enums import AccountType, AddressType, PayoutStatus, PlanCode, Role, SocialPlatform, StoreState
 
 
 class User(UUIDMixin, TimestampMixin, Base):
@@ -185,6 +187,22 @@ class DesignerProject(UUIDMixin, TimestampMixin, Base):
         back_populates="project", cascade="all, delete-orphan",
         order_by="DesignerProjectImage.position",
     )
+
+
+class Payout(UUIDMixin, TimestampMixin, Base):
+    """A designer withdrawal request. Earnings themselves are DERIVED (from
+    completed collaborations + orders); payouts are the only stored money rows,
+    forming the auditable payment history. 🔌 payout-provider seam."""
+
+    __tablename__ = "payouts"
+
+    designer_profile_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("designer_profiles.id", ondelete="CASCADE"), index=True
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    status: Mapped[PayoutStatus] = mapped_column(SAEnum(PayoutStatus), default=PayoutStatus.PROCESSING)
+    method: Mapped[str] = mapped_column(String)  # display label, e.g. "Bank transfer"
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class DesignerProjectImage(UUIDMixin, TimestampMixin, Base):

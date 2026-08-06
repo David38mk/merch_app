@@ -27,6 +27,7 @@ import BuyerOrderDetail from "./pages/dashboard/buyer/BuyerOrderDetail";
 import BuyerOrders from "./pages/dashboard/buyer/BuyerOrders";
 import CallDetail from "./pages/dashboard/designer/CallDetail";
 import DesignerCalls from "./pages/dashboard/designer/DesignerCalls";
+import DesignerEarnings from "./pages/dashboard/designer/DesignerEarnings";
 import DesignerPortfolio from "./pages/dashboard/designer/DesignerPortfolio";
 import DesignerCollabs from "./pages/dashboard/designer/DesignerCollabs";
 import PrintShopCatalog from "./pages/dashboard/printshop/PrintShopCatalog";
@@ -185,6 +186,7 @@ export default function App() {
         <Route path="/seller/hiring/:id/edit" element={<JobForm />} />
         <Route path="/designer" element={<DesignerCalls />} />
         <Route path="/designer/portfolio" element={<DesignerPortfolio />} />
+        <Route path="/designer/earnings" element={<DesignerEarnings />} />
         <Route path="/designer/calls/:id" element={<CallDetail />} />
         <Route path="/collaborations/:id" element={<CollaborationWorkspace />} />
         <Route path="/designer/collabs" element={<DesignerCollabs />} />

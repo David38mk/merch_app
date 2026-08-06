@@ -144,3 +144,46 @@ export async function deleteProjectImage(id: string, imageId: string): Promise<D
 export async function reorderProjectImages(id: string, imageIds: string[]): Promise<DesignerProject> {
   return (await api.post<DesignerProject>(`/designer/projects/${id}/reorder`, { image_ids: imageIds })).data;
 }
+
+// ── earnings + payouts ────────────────────────────────────────────────────────
+
+export type PayoutStatus = "REQUESTED" | "PROCESSING" | "PAID" | "FAILED";
+
+export interface ProjectEarning {
+  collaboration_id: string;
+  seller: string;
+  product: string | null;
+  payment_type: "FIXED" | "PERCENT" | "BOTH";
+  amount_earned: string;
+  available: string;
+  pending: string;
+  status: string;
+}
+
+export interface Payout {
+  id: string;
+  amount: string;
+  status: PayoutStatus;
+  method: string;
+  created_at: string;
+  paid_at: string | null;
+}
+
+export interface Earnings {
+  total_earnings: string;
+  available_balance: string;
+  pending_balance: string;
+  lifetime_revenue: string;
+  withdrawn: string;
+  min_payout: string;
+  projects: ProjectEarning[];
+  payouts: Payout[];
+}
+
+export async function getEarnings(): Promise<Earnings> {
+  return (await api.get<Earnings>("/designer/earnings")).data;
+}
+
+export async function requestPayout(amount?: number): Promise<Earnings> {
+  return (await api.post<Earnings>("/designer/payouts", amount != null ? { amount } : {})).data;
+}
