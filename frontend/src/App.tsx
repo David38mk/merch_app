@@ -134,6 +134,9 @@ export default function App() {
       {/* Public storefront — its own branded page, reachable by anyone (no auth) */}
       <Route path="/store/:slug" element={<Storefront />} />
 
+      {/* Public designer profile — shareable, viewable by anyone (no auth) */}
+      <Route path="/designers/:slug" element={<DesignerProfile />} />
+
       {/* Onboarding — auth required, full-page (no dashboard chrome) */}
       <Route
         path="/onboarding"
@@ -181,7 +184,6 @@ export default function App() {
         <Route path="/seller/hiring/:id/edit" element={<JobForm />} />
         <Route path="/designer" element={<DesignerCalls />} />
         <Route path="/designer/calls/:id" element={<CallDetail />} />
-        <Route path="/designers/:slug" element={<DesignerProfile />} />
         <Route path="/collaborations/:id" element={<CollaborationWorkspace />} />
         <Route path="/designer/collabs" element={<DesignerCollabs />} />
         <Route path="/printshop" element={<PrintShopQueue />} />

@@ -354,6 +354,8 @@ def designer_profile(
     slug: str,
     db: Session = Depends(get_db),
 ) -> DesignerPublicProfile:
+    """Public designer profile — no auth, so a shared link opens for anyone
+    (sellers view it before hiring; guests can view it too)."""
     p = db.scalar(select(DesignerProfile).where(DesignerProfile.slug == slug))
     if p is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Designer not found.")
@@ -365,9 +367,18 @@ def designer_profile(
         .order_by(DesignerReview.created_at.desc())
         .limit(10)
     ).all()
-    portfolio = db.scalars(
+    designs = db.scalars(
         select(Design).where(Design.owner_user_id == p.user_id).order_by(Design.created_at.desc()).limit(12)
     ).all()
+
+    # Portfolio = the designer's uploaded showcase images first, then their Designs.
+    portfolio = [
+        PortfolioPiece(id=i.id, resource_url=i.image_url, source="portfolio", created_at=i.created_at)
+        for i in p.portfolio_items
+    ] + [
+        PortfolioPiece(id=d.id, resource_url=d.resource_url, source=d.source.value, created_at=d.created_at)
+        for d in designs
+    ]
 
     return DesignerPublicProfile(
         id=p.id,
@@ -376,6 +387,15 @@ def designer_profile(
         bio=p.bio,
         avatar_url=p.avatar_url,
         cover_url=p.cover_url,
+        country=p.country,
+        experience=p.experience,
+        skills=list(p.skills or []),
+        portfolio_links=list(p.portfolio_links or []),
+        website=p.website,
+        behance=p.behance,
+        dribbble=p.dribbble,
+        instagram=p.instagram,
+        member_since=p.created_at,
         rating_avg=avg,
         rating_count=count,
         completed_jobs=completed_counts(db, [p.id]).get(p.id, 0),
@@ -390,10 +410,5 @@ def designer_profile(
             )
             for r in reviews
         ],
-        portfolio=[
-            PortfolioPiece(
-                id=d.id, resource_url=d.resource_url, source=d.source.value, created_at=d.created_at
-            )
-            for d in portfolio
-        ],
+        portfolio=portfolio,
     )

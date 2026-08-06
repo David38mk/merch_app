@@ -39,6 +39,15 @@ export interface DesignerPublicProfile {
   bio: string | null;
   avatar_url: string | null;
   cover_url: string | null;
+  country: string | null;
+  experience: string | null;
+  skills: string[];
+  portfolio_links: string[];
+  website: string | null;
+  behance: string | null;
+  dribbble: string | null;
+  instagram: string | null;
+  member_since: string;
   rating_avg: number | null;
   rating_count: number;
   completed_jobs: number;

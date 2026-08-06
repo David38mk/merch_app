@@ -132,6 +132,11 @@ class DesignerProfile(UUIDMixin, TimestampMixin, Base):
     skills: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")  # design categories
     portfolio_links: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")  # extra portfolio URLs
     onboarding_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # ── contact / socials (the ticket's fixed set) ──
+    website: Mapped[str | None] = mapped_column(String, nullable=True)
+    behance: Mapped[str | None] = mapped_column(String, nullable=True)
+    dribbble: Mapped[str | None] = mapped_column(String, nullable=True)
+    instagram: Mapped[str | None] = mapped_column(String, nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="designer_profile")
     bids: Mapped[list["Bid"]] = relationship(back_populates="designer")  # noqa: F821
