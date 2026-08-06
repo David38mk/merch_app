@@ -91,6 +91,7 @@ class CallOut(BaseModel):
     display_status: str
     base_item_id: uuid.UUID | None
     base_name: str | None
+    base_category: str | None
     base_image_url: str | None
     provider: str | None
     seller_brand: str | None
@@ -141,6 +142,7 @@ class BidCreate(BaseModel):
 
 _LOADERS = (
     selectinload(DesignerCall.base_item).selectinload(BaseItem.print_shop),
+    selectinload(DesignerCall.base_item).selectinload(BaseItem.category),
     selectinload(DesignerCall.attachments),
     selectinload(DesignerCall.bids),
     selectinload(DesignerCall.seller),
@@ -209,6 +211,7 @@ def _out(
         display_status=_display_status(call, collab),
         base_item_id=call.base_item_id,
         base_name=base.name if base else None,
+        base_category=base.category.name if base and base.category else None,
         base_image_url=base.image_url if base else None,
         provider=base.print_shop.name if base and base.print_shop else None,
         seller_brand=call.seller.store_name if call.seller else None,

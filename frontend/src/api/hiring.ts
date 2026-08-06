@@ -63,6 +63,7 @@ export interface DesignerCall {
   collaboration_id: string | null;
   base_item_id: string | null;
   base_name: string | null;
+  base_category: string | null;
   base_image_url: string | null;
   provider: string | null;
   seller_brand: string | null;
