@@ -34,3 +34,47 @@ const EVENT: Record<CollabEventType, string> = {
 export function eventLabel(t: CollabEventType): string {
   return EVENT[t] ?? t;
 }
+
+// ── canonical project timeline (the 7-stage status tracker) ───────────────────
+
+export const COLLAB_STEPS = [
+  "Accepted",
+  "Working",
+  "Draft submitted",
+  "Revision requested",
+  "Updated draft",
+  "Final approval",
+  "Completed",
+] as const;
+
+// Where each backend stage sits on the 7-step spine.
+const STAGE_STEP: Record<CollabStage, number> = {
+  PENDING: 0,
+  DESIGNER_STARTED: 1,
+  FIRST_DRAFT_SUBMITTED: 2,
+  REVISION_REQUESTED: 3,
+  UPDATED_DESIGN_SUBMITTED: 4,
+  DRAFT_APPROVED: 5,
+  SELLER_REVIEWING: 5,
+  FINAL_APPROVAL: 5,
+  PAYMENT_PENDING: 5,
+  COMPLETED: 6,
+};
+
+export type StepStatus = "done" | "current" | "upcoming" | "skipped";
+
+/**
+ * Per-step status for the tracker. The revision pair (steps 3–4) is optional —
+ * if no revision ever happened it renders "skipped" rather than falsely ticked.
+ */
+export function stepStatuses(stage: CollabStage, revisionHappened: boolean): StepStatus[] {
+  const cur = STAGE_STEP[stage] ?? 0;
+  const done = stage === "COMPLETED";
+  return COLLAB_STEPS.map((_, i) => {
+    const optional = i === 3 || i === 4;
+    if (optional && !revisionHappened) return "skipped";
+    if (i < cur) return "done";
+    if (i === cur) return done ? "done" : "current";
+    return "upcoming";
+  });
+}

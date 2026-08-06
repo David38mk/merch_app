@@ -22,6 +22,7 @@ import {
   requestRevision,
   startWork,
   submitWork,
+  type Collaboration,
   type SubmissionKind,
 } from "../../api/collaborations";
 import { Badge } from "../../components/ui/Badge";
@@ -29,7 +30,7 @@ import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { apiError } from "../../lib/apiError";
 import { cn } from "../../lib/cn";
-import { eventLabel, stageMeta } from "../../lib/collabStage";
+import { COLLAB_STEPS, eventLabel, stageMeta, stepStatuses } from "../../lib/collabStage";
 import { timeAgo } from "../../lib/timeAgo";
 
 const date = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString() : "—");
@@ -45,7 +46,11 @@ export default function CollaborationWorkspace() {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const { data: collab, isLoading } = useQuery({ queryKey: ["collab", id], queryFn: () => getCollaboration(id) });
+  const { data: collab, isLoading } = useQuery({
+    queryKey: ["collab", id],
+    queryFn: () => getCollaboration(id),
+    refetchInterval: 15_000, // poll so the counterpart's actions (approve/revise/pay) reflect live
+  });
   const { data: messages } = useQuery({
     queryKey: ["collab-messages", id],
     queryFn: () => listMessages(id),
@@ -176,6 +181,8 @@ export default function CollaborationWorkspace() {
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
       </Card>
+
+      <StatusTracker collab={collab} />
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
@@ -369,5 +376,59 @@ export default function CollaborationWorkspace() {
         </div>
       </div>
     </div>
+  );
+}
+
+/** The canonical 7-stage project timeline as a horizontal stepper. */
+function StatusTracker({ collab }: { collab: Collaboration }) {
+  const revisionHappened = collab.events.some((e) => e.type === "REVISION_REQUESTED");
+  const statuses = stepStatuses(collab.stage, revisionHappened);
+
+  return (
+    <Card className="mb-6 overflow-x-auto p-6">
+      <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-400">Project status</h2>
+      <ol className="flex min-w-max items-start gap-0">
+        {COLLAB_STEPS.map((label, i) => {
+          const st = statuses[i];
+          const isLast = i === COLLAB_STEPS.length - 1;
+          return (
+            <li key={label} className="flex items-start">
+              <div className="flex w-24 flex-col items-center text-center">
+                <span
+                  className={cn(
+                    "flex h-8 w-8 items-center justify-center rounded-full border-2 text-xs font-semibold",
+                    st === "done" && "border-brand-600 bg-brand-600 text-white",
+                    st === "current" && "border-brand-600 bg-white text-brand-700",
+                    st === "upcoming" && "border-slate-200 bg-white text-slate-300",
+                    st === "skipped" && "border-dashed border-slate-200 bg-white text-slate-300",
+                  )}
+                >
+                  {st === "done" ? <Check className="h-4 w-4" /> : i + 1}
+                </span>
+                <span
+                  className={cn(
+                    "mt-2 text-xs leading-tight",
+                    st === "current" ? "font-semibold text-slate-800" : "text-slate-500",
+                    st === "skipped" && "text-slate-300",
+                  )}
+                >
+                  {label}
+                </span>
+                {st === "current" && <span className="mt-0.5 text-[10px] font-medium text-brand-600">In progress</span>}
+                {st === "skipped" && <span className="mt-0.5 text-[10px] text-slate-300">Skipped</span>}
+              </div>
+              {!isLast && (
+                <span
+                  className={cn(
+                    "mt-4 h-0.5 w-8 shrink-0",
+                    statuses[i + 1] === "done" || st === "done" ? "bg-brand-500" : "bg-slate-200",
+                  )}
+                />
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </Card>
   );
 }
